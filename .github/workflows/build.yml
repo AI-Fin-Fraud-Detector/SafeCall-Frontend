@@ -1,36 +1,146 @@
-name: Build APK
+name: Build & Release
 
 on:
   push:
     branches: [main]
+  workflow_dispatch:
 
 jobs:
-  build:
+  # ── Compute release tag ───────────────────────────────────────────────────────
+  version:
     runs-on: ubuntu-latest
-    permissions:
-      contents: write
+    outputs:
+      tag: ${{ steps.tag.outputs.tag }}
+      app_name: ${{ steps.tag.outputs.app_name }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: tag
+        run: |
+          VERSION=$(grep '^version:' pubspec.yaml | awk '{print $2}' | tr -d "'\"")
+          SHORT_SHA=$(echo "${{ github.sha }}" | cut -c1-7)
+          echo "tag=v${VERSION}-${SHORT_SHA}" >> "$GITHUB_OUTPUT"
+          echo "app_name=safecall" >> "$GITHUB_OUTPUT"
 
+  # ── Android APK (release-signed) ──────────────────────────────────────────────
+  build-android:
+    needs: version
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
 
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: '17'
+          java-version: 17
 
       - uses: subosito/flutter-action@v2
         with:
           channel: stable
+          cache: true
+
+      - name: Write google-services.json
+        run: echo '${{ secrets.GOOGLE_SERVICES_JSON }}' > android/app/google-services.json
 
       - run: flutter pub get
+      - run: flutter build apk --release
+      - name: Rename Android APK
+        run: mv build/app/outputs/flutter-apk/app-release.apk build/app/outputs/flutter-apk/${{ needs.version.outputs.app_name }}-android-${{ needs.version.outputs.tag }}.apk
 
-      - name: Build APK
-        run: flutter build apk --debug
-
-      - name: Upload APK to Releases
-        uses: softprops/action-gh-release@v2
+      - uses: actions/upload-artifact@v4
         with:
-          tag_name: latest
-          name: Latest Build
-          prerelease: true
-          files: build/app/outputs/flutter-apk/app-debug.apk
+          name: android-apk
+          path: build/app/outputs/flutter-apk/${{ needs.version.outputs.app_name }}-android-${{ needs.version.outputs.tag }}.apk
+          retention-days: 5
+
+  # ── iOS .app (no code signing) ────────────────────────────────────────────────
+  build-ios:
+    needs: version
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - run: flutter pub get
+      - run: flutter build ios --release --no-codesign
+
+      - name: Package into unsigned IPA
+        run: |
+          cd build/ios/iphoneos
+          mkdir -p Payload
+          cp -r Runner.app Payload/
+          zip -r ${{ needs.version.outputs.app_name }}-ios-${{ needs.version.outputs.tag }}.ipa Payload
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ios-app
+          path: build/ios/iphoneos/${{ needs.version.outputs.app_name }}-ios-${{ needs.version.outputs.tag }}.ipa
+          retention-days: 5
+
+  # ── Web Build ───────────────────────────────────────────────────────────────────
+  build-web:
+    needs: version
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - run: flutter pub get
+      - run: flutter build web --release
+
+      - name: Archive Web Build
+        run: |
+          cd build/web
+          zip -r ../../${{ needs.version.outputs.app_name }}-web-${{ needs.version.outputs.tag }}.zip .
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: web-build
+          path: ${{ needs.version.outputs.app_name }}-web-${{ needs.version.outputs.tag }}.zip
+          retention-days: 5
+
+  # ── Create GitHub Release ─────────────────────────────────────────────────────
+  release:
+    needs: [version, build-android, build-ios, build-web]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: android-apk
+          path: artifacts/android
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: ios-app
+          path: artifacts/ios
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: web-build
+          path: artifacts/web
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ needs.version.outputs.tag }}
+          name: ${{ needs.version.outputs.tag }}
+          body: |
+            Automated release from commit ${{ github.sha }}
+
+            **Branch:** `${{ github.ref_name }}`
+
+            > **iOS note:** `${{ needs.version.outputs.app_name }}-ios-${{ needs.version.outputs.tag }}.ipa` has no code signature. To install on a device, sign it locally with your own certificate or use a tool like [iOS App Signer](https://dantheman827.github.io/ios-app-signer/).
+          draft: false
+          prerelease: false
+          files: |
+            artifacts/android/${{ needs.version.outputs.app_name }}-android-${{ needs.version.outputs.tag }}.apk
+            artifacts/ios/${{ needs.version.outputs.app_name }}-ios-${{ needs.version.outputs.tag }}.ipa
+            artifacts/web/${{ needs.version.outputs.app_name }}-web-${{ needs.version.outputs.tag }}.zip
