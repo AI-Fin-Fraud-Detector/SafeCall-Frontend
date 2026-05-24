@@ -27,6 +27,7 @@ Desktop.ini
 **/*.keystore
 **/*.ks
 **/*.jks
+**/android/app/google-services.json
 
 # iOS
 **/ios/Pods/
