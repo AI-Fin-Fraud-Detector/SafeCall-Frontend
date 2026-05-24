@@ -1,0 +1,12 @@
+[
+  { "type": "detection_started" },
+  { "type": "incoming_call_request", "caller_id": "0800-123-456", "target_username": "demo_user", "timeout": 30, "llm_only": false },
+  { "type": "call_accepted", "call_id": "call-demo-001" },
+  { "type": "fraud_assessment", "sentence": "您好，我是台灣大哥大客服。", "fraud_stage": 0 },
+  { "type": "fraud_assessment", "sentence": "做用戶滿意度調查，大概三分鐘。", "fraud_stage": 1 },
+  { "type": "fraud_assessment", "sentence": "需要您配合轉帳到安全帳戶。", "fraud_stage": 2 },
+  { "type": "fraud_assessment", "sentence": "緊急情況，帳戶將被凍結。", "fraud_stage": 3 },
+  { "type": "scam_decision", "fraud_stage": 3, "fraud_count": 2 },
+  { "type": "detection_ended" },
+  { "type": "call_ended", "call_id": "call-demo-001" }
+]

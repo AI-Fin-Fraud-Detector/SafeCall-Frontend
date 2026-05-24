@@ -1,0 +1,181 @@
+import 'dart:async';
+import 'dart:convert';
+
+import 'package:firebase_messaging/firebase_messaging.dart';
+import 'package:flutter/widgets.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+
+const _kNotifHistoryKey = 'fcm_notif_history';
+
+/// 背景訊息 handler — 必須是 top-level function，跑在獨立 isolate
+@pragma('vm:entry-point')
+Future<void> _backgroundMessageHandler(RemoteMessage message) async {
+  debugPrint('[FCM] Background message: ${message.data}');
+  final data = message.data;
+  if (data['type'] == 'incoming_call') {
+    final prefs = await SharedPreferences.getInstance();
+    final existing = prefs.getString(_kNotifHistoryKey);
+    final List<dynamic> history = existing != null ? jsonDecode(existing) : [];
+    history.add({
+      'title': message.notification?.title,
+      'body': message.notification?.body,
+      'data': data,
+    });
+    await prefs.setString(_kNotifHistoryKey, jsonEncode(history));
+  }
+}
+
+/// FCM 通知資料（含完整 data map）
+class FcmNotifData {
+  final String? title;
+  final String? body;
+  final Map<String, dynamic> data;
+
+  const FcmNotifData({this.title, this.body, required this.data});
+
+  Map<String, dynamic> toJson() => {
+        'title': title,
+        'body': body,
+        'data': data,
+      };
+
+  factory FcmNotifData.fromJson(Map<String, dynamic> json) => FcmNotifData(
+        title: json['title'] as String?,
+        body: json['body'] as String?,
+        data: Map<String, dynamic>.from(json['data'] as Map? ?? {}),
+      );
+}
+
+class FcmService with WidgetsBindingObserver {
+  FcmService._();
+  static final FcmService I = FcmService._();
+
+  /// 所有歷史通知（最新在最後）
+  final ValueNotifier<List<FcmNotifData>> notifHistory =
+      ValueNotifier(const []);
+
+  /// 所有 FCM data 事件的 broadcast stream（incoming_call / call_*_message）
+  final _eventCtrl = StreamController<Map<String, dynamic>>.broadcast();
+  Stream<Map<String, dynamic>> get events => _eventCtrl.stream;
+
+  /// 用戶點通知後的 callback → (conversationId, phoneNumber, callerName)
+  void Function(String conversationId, String phoneNumber, String? callerName)?
+      onIncomingCall;
+
+  Future<String?> initialize() async {
+    FirebaseMessaging.onBackgroundMessage(_backgroundMessageHandler);
+
+    WidgetsBinding.instance.addObserver(this);
+
+    final settings = await FirebaseMessaging.instance.requestPermission(
+      alert: true,
+      badge: true,
+      sound: true,
+      provisional: false,
+    );
+    debugPrint('[FCM] Permission: ${settings.authorizationStatus}');
+
+    await loadPersistedNotif();
+
+    FirebaseMessaging.onMessage.listen(_storeAndNavigate);
+    FirebaseMessaging.onMessageOpenedApp.listen(_storeAndNavigate);
+
+    final initial = await FirebaseMessaging.instance.getInitialMessage();
+    if (initial != null) _storeAndNavigate(initial);
+
+    final token = await FirebaseMessaging.instance.getToken();
+    debugPrint('[FCM] Token: $token');
+
+    FirebaseMessaging.instance.onTokenRefresh.listen((newToken) {
+      debugPrint('[FCM] Token refreshed: $newToken');
+      _onTokenRefreshed?.call(newToken);
+    });
+
+    return token;
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      loadPersistedNotif();
+    }
+  }
+
+  Future<void> loadPersistedNotif() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.reload();
+    final raw = prefs.getString(_kNotifHistoryKey);
+    if (raw == null) return;
+    try {
+      final List<dynamic> list = jsonDecode(raw);
+      final parsed = list
+          .map((e) => FcmNotifData.fromJson(Map<String, dynamic>.from(e as Map)))
+          .toList();
+      notifHistory.value = parsed;
+    } catch (e) {
+      debugPrint('[FCM] Failed to parse notif history: $e');
+    }
+  }
+
+  void Function(String newToken)? _onTokenRefreshed;
+
+  void setTokenRefreshCallback(void Function(String) cb) {
+    _onTokenRefreshed = cb;
+  }
+
+  /// 解析可能是 JSON string 或已解析 Map 的欄位
+  Map<String, dynamic> _parseField(dynamic value) {
+    if (value is Map) return Map<String, dynamic>.from(value);
+    if (value is String && value.isNotEmpty) {
+      try {
+        return jsonDecode(value) as Map<String, dynamic>;
+      } catch (_) {}
+    }
+    return {};
+  }
+
+  Future<void> _storeMessage(RemoteMessage message) async {
+    debugPrint('[FCM] Message received: ${message.data}');
+    final data = message.data;
+    final type = data['type'] as String? ?? '';
+
+    // 只把 incoming_call 存通知歷史（其他 type 是即時資料，不需要持久化）
+    if (type == 'incoming_call') {
+      final notif = FcmNotifData(
+        title: message.notification?.title,
+        body: message.notification?.body,
+        data: data,
+      );
+      final updated = [...notifHistory.value, notif];
+      notifHistory.value = updated;
+
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(
+        _kNotifHistoryKey,
+        jsonEncode(updated.map((e) => e.toJson()).toList()),
+      );
+    }
+
+    // 所有 type 都 emit 給 CallProvider 處理
+    if (type.isNotEmpty) {
+      _eventCtrl.add(Map<String, dynamic>.from(data));
+    }
+  }
+
+  Future<void> _storeAndNavigate(RemoteMessage message) async {
+    await _storeMessage(message);
+    final data = message.data;
+    if (data['type'] == 'incoming_call') {
+      final detail = _parseField(data['detail']);
+      final conversationId = detail['conversation_id'] as String? ?? '';
+      final phoneNumber =
+          detail['phone_number'] as String? ?? data['phone_number'] as String? ?? '';
+      final callerName =
+          detail['caller_name'] as String? ?? data['caller_name'] as String?;
+
+      if (conversationId.isNotEmpty) {
+        onIncomingCall?.call(conversationId, phoneNumber, callerName);
+      }
+    }
+  }
+}
