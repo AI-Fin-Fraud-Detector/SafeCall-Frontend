@@ -238,12 +238,15 @@ class ApiService {
     return url;
   }
 
-  Future<void> callEnd(String calleeUserId) async {
+  Future<void> answerCall() async {
     try {
-      await _dio.post(
-        '/api/fraud/call-end',
-        data: {'callee_user_id': calleeUserId},
-      );
+      await _dio.post('/api/fraud/answer-call');
+    } catch (_) {}
+  }
+
+  Future<void> callEnd() async {
+    try {
+      await _dio.post('/api/fraud/call-end');
     } catch (_) {}
   }
 

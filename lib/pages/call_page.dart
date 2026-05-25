@@ -7,10 +7,11 @@ import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../config/api_config.dart';
+import '../di/service_locator.dart';
 import '../models/call_transcript.dart';
 import '../models/conversation_models.dart';
-import '../providers/auth_provider.dart';
 import '../providers/call_provider.dart';
+import '../services/api_service.dart';
 import '../services/audio_service.dart';
 import 'call_summary_page.dart';
 import 'conversations_page.dart';
@@ -68,6 +69,7 @@ class _CallPageState extends State<CallPage> {
   final List<TranscriptEntry> _mockTranscript = [];
   int _mockScore = 0;
   int _maxScore = 0; // highest score seen — used in summary
+  int _lastRealScore = 0; // tracks last seen score in real mode
   bool _isTranscribing = false;
   bool _isScoreStale = false;
 
@@ -128,6 +130,7 @@ class _CallPageState extends State<CallPage> {
       _audioSub = _cp.audioFrames.listen((bytes) {
         _audio.playBytes(bytes);
       });
+      _cp.addListener(_onProviderUpdate);
     }
   }
 
@@ -137,6 +140,15 @@ class _CallPageState extends State<CallPage> {
     _mockScore = score;
     if (score > _maxScore) _maxScore = score;
     _scoreHistory.add((seconds: _durationSecs, score: score));
+  }
+
+  void _onProviderUpdate() {
+    if (!mounted) return;
+    final newScore = (_cp.scamProbability * 100).round();
+    if (newScore != _lastRealScore) {
+      _lastRealScore = newScore;
+      setState(() => _updateScore(newScore));
+    }
   }
 
   // ── Mock sequences ────────────────────────────────────────────────────────────
@@ -320,6 +332,7 @@ class _CallPageState extends State<CallPage> {
     _audio.stopPlay();
     _scroll.dispose();
     if (!_isMock) {
+      _cp.removeListener(_onProviderUpdate);
       unawaited(_cp.stopMicStream());
     }
     super.dispose();
@@ -347,7 +360,7 @@ class _CallPageState extends State<CallPage> {
 
     final int score = _isMock
         ? _mockScore
-        : ((cp.latest?.riskScore ?? 0) * 100).round();
+        : (cp.scamProbability * 100).round();
     final int durSecs = _isMock ? _durationSecs : cp.callDuration.inSeconds;
     final String caller = _isMock
         ? (widget.callerNumber ?? (_isOutgoing ? '0912-345-678' : '0800-123-456'))
@@ -369,7 +382,7 @@ class _CallPageState extends State<CallPage> {
     final bool isScoreStale = _isMock ? _isScoreStale : false;
 
     final bool hasScore = score > 0;
-    final bool isHighRisk = score >= 80;
+    final bool isHighRisk = score >= 80 || (!_isMock && cp.isFraudAlert);
 
     return Scaffold(
       backgroundColor: const Color(0xFF0D0D1A),
@@ -384,6 +397,7 @@ class _CallPageState extends State<CallPage> {
             Expanded(
               child: _buildTranscriptSection(transcript, isTranscribing),
             ),
+            if (!_isMock && cp.isSafeToAnswer && !isHighRisk) _buildSafeToAnswerBanner(),
             if (isHighRisk) _buildWarning(),
             const SizedBox(height: 12),
             _buildButtons(isHighRisk, _isOutgoing),
@@ -844,6 +858,44 @@ class _CallPageState extends State<CallPage> {
     );
   }
 
+  Widget _buildSafeToAnswerBanner() {
+    return Container(
+      margin: const EdgeInsets.fromLTRB(16, 4, 16, 4),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      decoration: BoxDecoration(
+        color: const Color(0xFF0A3A1A),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: Colors.green.withValues(alpha: 0.55), width: 1.5),
+      ),
+      child: const Row(
+        children: [
+          Icon(Icons.check_circle_outline, color: Color(0xFF4CAF50), size: 26),
+          SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Call appears safe',
+                  style: TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w700,
+                    color: Color(0xFF4CAF50),
+                  ),
+                ),
+                SizedBox(height: 2),
+                Text(
+                  'Low fraud risk — safe to answer',
+                  style: TextStyle(fontSize: 14, color: Color(0xFF81C784)),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildWarning() {
     return Container(
       margin: const EdgeInsets.fromLTRB(16, 4, 16, 4),
@@ -1013,13 +1065,15 @@ class _CallPageState extends State<CallPage> {
   // ── Handlers ──────────────────────────────────────────────────────────────────
 
   void _onAccept() {
-    // Cancel remaining mock timers so no new AI bubbles appear
     for (final t in _mockTimers) {
       t.cancel();
     }
     _mockTimers.clear();
     setState(() => _userAnswered = true);
-    if (!_isMock) _cp.acceptCall();
+    if (!_isMock) {
+      _cp.acceptCall();
+      unawaited(sl<ApiService>().answerCall());
+    }
   }
 
   void _onContinue() {
@@ -1064,12 +1118,13 @@ class _CallPageState extends State<CallPage> {
       final transcript = List<TranscriptEntry>.from(_cp.fcmTranscript);
       final convId = _cp.conversationId;
       final dur = _durationSecs;
-      final uuid = context.read<AuthProvider>().uuid;
-      unawaited(_cp.hangup(calleeUserId: uuid));
+      unawaited(_cp.hangup());
       // 把通話時長存到本機，供通話記錄頁顯示
       if (convId != null && dur > 0) {
-        SharedPreferences.getInstance()
-            .then((p) => p.setInt('call_dur_$convId', dur));
+        SharedPreferences.getInstance().then((p) {
+          p.setInt('call_dur_$convId', dur);
+          if (_maxScore > 0) p.setInt('call_score_$convId', _maxScore);
+        });
       }
       if (mounted) {
         final display = widget.contactName ?? widget.callerNumber ?? 'Unknown';

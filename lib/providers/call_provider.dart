@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 import 'package:permission_handler/permission_handler.dart';
 
 import '../models/call_transcript.dart';
+import '../models/fraud_models.dart';
 import '../models/scam_event.dart';
 import '../models/ws_message.dart';
 import '../models/stats_record.dart';
@@ -145,6 +146,19 @@ class CallProvider extends ChangeNotifier {
       ? DateTime.now().difference(DateTime.now())
       : DateTime.now().difference(_callStartAt!);
 
+  // ── FCM risk state ──
+  double _scamProbability = 0.0;
+  double get scamProbability => _scamProbability;
+
+  SsciData? _ssciData;
+  SsciData? get ssciData => _ssciData;
+
+  bool _isFraudAlert = false;
+  bool get isFraudAlert => _isFraudAlert;
+
+  bool _isSafeToAnswer = false;
+  bool get isSafeToAnswer => _isSafeToAnswer;
+
   // ── Audio streaming ──
   bool _streaming = false;
   bool get streaming => _streaming;
@@ -247,6 +261,39 @@ class CallProvider extends ChangeNotifier {
         final msg = _parseField(data['message']);
         final id = msg['id'] as String? ?? '';
         _fcmMsgs.removeWhere((m) => m.id == id);
+        notifyListeners();
+
+      case 'ssci_update':
+        final convId = data['conversation_id'] as String? ?? '';
+        if (_conversationId != null && convId != _conversationId) return;
+        final ssciMap = _parseField(data['ssci']);
+        _scamProbability = (ssciMap['scam_probability'] as num?)?.toDouble() ?? _scamProbability;
+        _ssciData = SsciData(
+          available: true,
+          updated: true,
+          rawInferenceCount: 0,
+          triggerCount: (ssciMap['trigger_index'] as num?)?.toInt() ?? 0,
+          confidence: (ssciMap['confidence'] as num?)?.toDouble(),
+          evidence: (ssciMap['evidence'] as num?)?.toDouble(),
+          agreement: (ssciMap['agreement'] as num?)?.toDouble(),
+          stability: (ssciMap['stability'] as num?)?.toDouble(),
+        );
+        notifyListeners();
+
+      case 'fraud_alert':
+        final convId = data['conversation_id'] as String? ?? '';
+        if (_conversationId != null && convId != _conversationId) return;
+        _isFraudAlert = true;
+        final prob = (data['scam_probability'] as num?)?.toDouble();
+        if (prob != null) _scamProbability = prob;
+        notifyListeners();
+
+      case 'safe_to_answer':
+        final convId = data['conversation_id'] as String? ?? '';
+        if (_conversationId != null && convId != _conversationId) return;
+        _isSafeToAnswer = true;
+        final prob = (data['scam_probability'] as num?)?.toDouble();
+        if (prob != null) _scamProbability = prob;
         notifyListeners();
     }
   }
@@ -469,15 +516,19 @@ class CallProvider extends ChangeNotifier {
     _conversationId = null;
     _callerPhone = null;
     _fcmMsgs.clear();
+    _scamProbability = 0.0;
+    _ssciData = null;
+    _isFraudAlert = false;
+    _isSafeToAnswer = false;
   }
 
-  Future<void> hangup({String? calleeUserId}) async {
+  Future<void> hangup() async {
     if (_currentCallId != null) {
       try {
         await sl<ApiService>().hangup(callId: _currentCallId!);
       } catch (_) {}
-    } else if (_conversationId != null && calleeUserId != null) {
-      await sl<ApiService>().callEnd(calleeUserId);
+    } else if (_conversationId != null) {
+      await sl<ApiService>().callEnd();
     }
     _endCall();
     _clearFcmCall();

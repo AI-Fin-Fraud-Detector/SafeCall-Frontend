@@ -1,6 +1,6 @@
 # 詐騙偵測通話功能 前端規格文件
 
-> 最後更新：2026-05-24 | 版本：v1.2
+> 最後更新：2026-05-26 | 版本：v1.3
 
 ---
 
@@ -72,11 +72,17 @@ In Call                                  00:34
 [ Continue ]        [ Hang Up ]
 ```
 
-### 高風險（score ≥ 80）
+### 高風險（score ≥ 80，或收到 fraud_alert 事件）
 ```
 ⚠️ High-risk fraud detected — Strongly recommend hanging up now
 [ Still Answer (opacity 0.4) ]   [ Hang Up Now (紅粗大) ]
 ```
+
+### 可安全接聽（收到 safe_to_answer 且 score < 80）
+```
+✅ Call appears safe — Low fraud risk — safe to answer
+```
+> 顯示綠色橫幅，不影響按鈕配置
 
 ### 重要 State
 
@@ -86,8 +92,11 @@ In Call                                  00:34
 | `_userAnswered` | 使用者是否親自接聽 |
 | `_isHangingUp` | 防止 hasActiveCall→false 時 auto-pop 彈掉 CallSummaryPage |
 | `_durationSecs` | 前端計時器秒數，掛斷時存 SharedPreferences |
-| `_maxScore` | 通話中最高風險分數，傳給 CallSummaryPage |
-| `_scoreHistory` | `List<({int seconds, int score})>`，傳給走勢圖 |
+| `_maxScore` | 通話中最高風險分數，傳給 CallSummaryPage；掛斷時存 SharedPreferences |
+| `_scoreHistory` | `List<({int seconds, int score})>`，傳給走勢圖；每次 ssci_update 自動追加 |
+| `scamProbability` | CallProvider — FCM ssci_update 更新的風險機率（0.0–1.0），×100 為顯示分數 |
+| `isFraudAlert` | CallProvider — 收到 fraud_alert 時為 true，觸發高風險 UI |
+| `isSafeToAnswer` | CallProvider — 收到 safe_to_answer 時為 true，顯示綠色安全提示 |
 
 ---
 

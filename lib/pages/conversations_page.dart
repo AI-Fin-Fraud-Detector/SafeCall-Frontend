@@ -288,17 +288,25 @@ class _ConversationSummaryPage extends StatefulWidget {
 
 class _ConversationSummaryPageState extends State<_ConversationSummaryPage> {
   int? _durationSecs;
+  int? _finalScore;
 
   @override
   void initState() {
     super.initState();
-    _loadDuration();
+    _loadLocalData();
   }
 
-  Future<void> _loadDuration() async {
+  Future<void> _loadLocalData() async {
     final prefs = await SharedPreferences.getInstance();
-    final dur = prefs.getInt('call_dur_${widget.conversation.id}');
-    if (mounted && dur != null) setState(() => _durationSecs = dur);
+    final id = widget.conversation.id;
+    final dur = prefs.getInt('call_dur_$id');
+    final score = prefs.getInt('call_score_$id');
+    if (mounted) {
+      setState(() {
+        _durationSecs = dur;
+        _finalScore = score;
+      });
+    }
   }
 
   @override
@@ -312,7 +320,7 @@ class _ConversationSummaryPageState extends State<_ConversationSummaryPage> {
       callerDisplay: display,
       callerNumber: number,
       durationSecs: _durationSecs,
-      finalScore: null,     // ⚠ 待串接 Edge
+      finalScore: _finalScore,
       scoreHistory: const [],
       transcript: const [],
       wasIncoming: true,
