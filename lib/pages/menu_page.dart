@@ -4,6 +4,7 @@ import 'package:google_fonts/google_fonts.dart';
 import '../constants.dart';
 import 'package:provider/provider.dart';
 import '../providers/auth_provider.dart';
+import 'debug_log_page.dart';
 
 class MenuPage extends StatelessWidget {
   const MenuPage({super.key});
@@ -20,6 +21,14 @@ class MenuPage extends StatelessWidget {
         backgroundColor: backgroundColor,
         title: const Text('Menu'),
         actions: [
+            IconButton(
+              icon: const Icon(Icons.bug_report_outlined),
+              tooltip: 'Debug Log',
+              onPressed: () => Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => const DebugLogPage()),
+              ),
+            ),
             IconButton(
               icon: const Icon(Icons.logout),
               onPressed: () async {

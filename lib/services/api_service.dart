@@ -8,6 +8,7 @@ import 'package:image_picker/image_picker.dart';
 import '../config/api_config.dart';
 import '../models/fraud_models.dart';
 import '../models/login_models.dart';
+import 'debug_logger.dart';
 
 class ChatResult {
   final Uint8List? audioBytes;
@@ -190,8 +191,9 @@ class ApiService {
 
   /// FCM token 註冊：登入後呼叫，讓後端可以發推播
   Future<void> registerFcmToken(String fcmToken) async {
+    DebugLogger.I.log('subscribe/kebbi → token=${fcmToken.substring(0, 20)}...');
     try {
-      await _dio.post(
+      final resp = await _dio.post(
         ApiConfig.pushSubscribePath,
         data: {
           'platform': 'fcm',
@@ -199,8 +201,10 @@ class ApiService {
         },
       );
       debugPrint('[API] FCM token registered');
+      DebugLogger.I.log('subscribe/kebbi ← ${resp.statusCode} ${resp.data}');
     } catch (e) {
       debugPrint('[API] FCM token registration failed: $e');
+      DebugLogger.I.log('subscribe/kebbi ERROR: $e');
     }
   }
 

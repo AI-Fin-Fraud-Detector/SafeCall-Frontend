@@ -286,6 +286,19 @@ class CallProvider extends ChangeNotifier {
         _isFraudAlert = true;
         final prob = (data['scam_probability'] as num?)?.toDouble();
         if (prob != null) _scamProbability = prob;
+        final ssciMap = _parseField(data['ssci']);
+        if (ssciMap.isNotEmpty) {
+          _ssciData = SsciData(
+            available: true,
+            updated: true,
+            rawInferenceCount: 0,
+            triggerCount: (ssciMap['trigger_index'] as num?)?.toInt() ?? 0,
+            confidence: (ssciMap['confidence'] as num?)?.toDouble(),
+            evidence: (ssciMap['evidence'] as num?)?.toDouble(),
+            agreement: (ssciMap['agreement'] as num?)?.toDouble(),
+            stability: (ssciMap['stability'] as num?)?.toDouble(),
+          );
+        }
         notifyListeners();
 
       case 'safe_to_answer':
@@ -294,6 +307,19 @@ class CallProvider extends ChangeNotifier {
         _isSafeToAnswer = true;
         final prob = (data['scam_probability'] as num?)?.toDouble();
         if (prob != null) _scamProbability = prob;
+        final ssciMap = _parseField(data['ssci']);
+        if (ssciMap.isNotEmpty) {
+          _ssciData = SsciData(
+            available: true,
+            updated: true,
+            rawInferenceCount: 0,
+            triggerCount: (ssciMap['trigger_index'] as num?)?.toInt() ?? 0,
+            confidence: (ssciMap['confidence'] as num?)?.toDouble(),
+            evidence: (ssciMap['evidence'] as num?)?.toDouble(),
+            agreement: (ssciMap['agreement'] as num?)?.toDouble(),
+            stability: (ssciMap['stability'] as num?)?.toDouble(),
+          );
+        }
         notifyListeners();
     }
   }

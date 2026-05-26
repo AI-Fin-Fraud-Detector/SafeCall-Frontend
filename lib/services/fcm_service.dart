@@ -5,6 +5,8 @@ import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/widgets.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'debug_logger.dart';
+
 const _kNotifHistoryKey = 'fcm_notif_history';
 
 /// 背景訊息 handler — 必須是 top-level function，跑在獨立 isolate
@@ -74,6 +76,7 @@ class FcmService with WidgetsBindingObserver {
       provisional: false,
     );
     debugPrint('[FCM] Permission: ${settings.authorizationStatus}');
+    DebugLogger.I.log('FCM permission: ${settings.authorizationStatus}');
 
     await loadPersistedNotif();
 
@@ -83,15 +86,20 @@ class FcmService with WidgetsBindingObserver {
     final initial = await FirebaseMessaging.instance.getInitialMessage();
     if (initial != null) _storeAndNavigate(initial);
 
-    final token = await FirebaseMessaging.instance.getToken();
-    debugPrint('[FCM] Token: $token');
-
-    FirebaseMessaging.instance.onTokenRefresh.listen((newToken) {
-      debugPrint('[FCM] Token refreshed: $newToken');
-      _onTokenRefreshed?.call(newToken);
-    });
-
-    return token;
+    try {
+      final token = await FirebaseMessaging.instance.getToken();
+      debugPrint('[FCM] Token: $token');
+      DebugLogger.I.log('FCM token: ${token ?? "null"}');
+      FirebaseMessaging.instance.onTokenRefresh.listen((newToken) {
+        debugPrint('[FCM] Token refreshed: $newToken');
+        DebugLogger.I.log('FCM token refreshed: $newToken');
+        _onTokenRefreshed?.call(newToken);
+      });
+      return token;
+    } catch (e) {
+      DebugLogger.I.log('FCM getToken error: $e');
+      return null;
+    }
   }
 
   @override
@@ -158,6 +166,8 @@ class FcmService with WidgetsBindingObserver {
 
     // 所有 type 都 emit 給 CallProvider 處理
     if (type.isNotEmpty) {
+      final convId = data['conversation_id'] as String? ?? '';
+      DebugLogger.I.log('FCM event: $type${convId.isNotEmpty ? " conv=$convId" : ""}');
       _eventCtrl.add(Map<String, dynamic>.from(data));
     }
   }
