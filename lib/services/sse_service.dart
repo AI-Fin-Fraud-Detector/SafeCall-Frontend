@@ -40,21 +40,26 @@ class SSEService {
   }
 
   Future<void> _connect() async {
-    if (_userId == null || _app == null || _token == null || _baseUrl == null) {
+    final userId = _userId;
+    final app = _app;
+    final token = _token;
+    final baseUrl = _baseUrl;
+
+    if (userId == null || app == null || token == null || baseUrl == null) {
       return;
     }
 
     try {
-      final uri = Uri.parse('$_baseUrl/api/push/events/$_app');
+      final uri = Uri.parse('$baseUrl/api/push/events/$app');
       final request = http.Request('GET', uri)
-        ..headers['Authorization'] = 'Bearer $_token'
-        ..headers['X-User-Id'] = _userId;
+        ..headers['Authorization'] = 'Bearer $token'
+        ..headers['X-User-Id'] = userId;
 
       _response = await http.Client().send(request);
 
       if (_response!.statusCode == 200) {
         _isConnected = true;
-        debugPrint('[SSE] Connected: $_userId ($_app)');
+        debugPrint('[SSE] Connected: $userId ($app)');
         _listenToStream();
       } else {
         debugPrint('[SSE] Connection failed: ${_response!.statusCode}');
