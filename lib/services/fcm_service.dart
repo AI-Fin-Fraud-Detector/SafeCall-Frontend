@@ -6,6 +6,7 @@ import 'package:flutter/widgets.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'debug_logger.dart';
+import 'sse_service.dart';
 
 const _kNotifHistoryKey = 'fcm_notif_history';
 
@@ -64,6 +65,9 @@ class FcmService with WidgetsBindingObserver {
   void Function(String conversationId, String phoneNumber, String? callerName)?
       onIncomingCall;
 
+  bool _fcmFailed = false;
+  bool get needsSSEFallback => _fcmFailed;
+
   Future<String?> initialize() async {
     FirebaseMessaging.onBackgroundMessage(_backgroundMessageHandler);
 
@@ -87,19 +91,60 @@ class FcmService with WidgetsBindingObserver {
     if (initial != null) _storeAndNavigate(initial);
 
     try {
-      final token = await FirebaseMessaging.instance.getToken();
-      debugPrint('[FCM] Token: $token');
-      DebugLogger.I.log('FCM token: ${token ?? "null"}');
+      final fcmToken = await FirebaseMessaging.instance.getToken();
+      debugPrint('[FCM] Token: $fcmToken');
+      DebugLogger.I.log('FCM token: ${fcmToken ?? "null"}');
+
       FirebaseMessaging.instance.onTokenRefresh.listen((newToken) {
         debugPrint('[FCM] Token refreshed: $newToken');
         DebugLogger.I.log('FCM token refreshed: $newToken');
         _onTokenRefreshed?.call(newToken);
       });
-      return token;
+
+      return fcmToken;
     } catch (e) {
-      DebugLogger.I.log('FCM getToken error: $e');
-      return null;
+      final errorStr = e.toString();
+      debugPrint('[FCM] getToken error: $errorStr');
+      DebugLogger.I.log('FCM getToken error: $errorStr');
+
+      if (errorStr.contains('MISSING_INSTANCEID_SERVICE')) {
+        debugPrint('[FCM] MISSING_INSTANCEID_SERVICE - will use SSE fallback');
+        DebugLogger.I.log('FCM MISSING_INSTANCEID_SERVICE - will use SSE fallback');
+        _fcmFailed = true;
+        return null;
+      }
+      rethrow;
     }
+  }
+
+  Future<void> initializeSSEFallback(String baseUrl, String userId, String token) async {
+    if (!_fcmFailed) {
+      debugPrint('[FCM] FCM is working, SSE fallback not needed');
+      return;
+    }
+
+    // Subscribe to SSE events and forward to FCM event stream
+    SSEService.I.events.listen((event) {
+      _eventCtrl.add(event);
+      if (event['type'] == 'incoming_call') {
+        _storeMessage(RemoteMessage(
+          data: event,
+          notification: RemoteNotification(
+            title: event['title'] as String?,
+            body: event['body'] as String?,
+          ),
+        ));
+      }
+    });
+
+    await SSEService.I.connect(
+      userId: userId,
+      app: 'kebbi',
+      token: token,
+      baseUrl: baseUrl,
+    );
+    debugPrint('[FCM] SSE fallback initialized');
+    DebugLogger.I.log('FCM SSE fallback initialized');
   }
 
   @override

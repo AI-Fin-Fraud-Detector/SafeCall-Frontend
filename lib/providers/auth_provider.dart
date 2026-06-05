@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import '/models/login_models.dart';
 import '/services/api_service.dart';
+import '/services/fcm_service.dart';
 import '/services/secure_storage.dart';
 import '/config/api_config.dart';
 import 'package:get_it/get_it.dart';
@@ -115,7 +116,7 @@ class AuthProvider extends ChangeNotifier {
 
   bool get isLoggedIn => _token?.isNotEmpty == true;
 
-  /// 取得 FCM token 並向後端註冊
+  /// 取得 FCM token 並向後端註冊，若失敗則使用 SSE fallback
   Future<void> _registerFcmToken() async {
     try {
       final fcmToken = await FirebaseMessaging.instance.getToken();
@@ -124,6 +125,18 @@ class AuthProvider extends ChangeNotifier {
       }
     } catch (e) {
       debugPrint('[Auth] FCM token register error: $e');
+      // FCM failed, try SSE fallback if we have auth token
+      if (_token != null && _uuid != null) {
+        try {
+          await FcmService.I.initializeSSEFallback(
+            ApiConfig.baseUrl,
+            _uuid!,
+            _token!,
+          );
+        } catch (sseError) {
+          debugPrint('[Auth] SSE fallback initialization failed: $sseError');
+        }
+      }
     }
   }
 }
