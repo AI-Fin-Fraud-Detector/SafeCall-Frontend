@@ -107,13 +107,16 @@ class FcmService with WidgetsBindingObserver {
       debugPrint('[FCM] getToken error: $errorStr');
       DebugLogger.I.log('FCM getToken error: $errorStr');
 
-      if (errorStr.contains('MISSING_INSTANCEID_SERVICE')) {
-        debugPrint('[FCM] MISSING_INSTANCEID_SERVICE - will use SSE fallback');
-        DebugLogger.I.log('FCM MISSING_INSTANCEID_SERVICE - will use SSE fallback');
-        _fcmFailed = true;
-        return null;
+      if (errorStr.contains('MISSING_INSTANCEID_SERVICE') ||
+          errorStr.contains('An unknown error occurred') ||
+          errorStr.contains('APNS token') ||
+          errorStr.contains('null')) {
+        debugPrint('[FCM] FCM unavailable - will use SSE fallback');
+        DebugLogger.I.log('FCM unavailable - will use SSE fallback');
       }
-      rethrow;
+
+      _fcmFailed = true;
+      return null;
     }
   }
 

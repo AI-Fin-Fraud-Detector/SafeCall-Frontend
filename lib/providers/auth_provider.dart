@@ -116,17 +116,27 @@ class AuthProvider extends ChangeNotifier {
 
   bool get isLoggedIn => _token?.isNotEmpty == true;
 
-  /// 取得 FCM token 並向後端註冊，若失敗則使用 SSE fallback
+  /// 取得 FCM token 並向後端註冊，若失敗或返回 null 則使用 SSE fallback
   Future<void> _registerFcmToken() async {
     try {
       final fcmToken = await FirebaseMessaging.instance.getToken();
       if (fcmToken != null && fcmToken.isNotEmpty) {
         await sl<ApiService>().registerFcmToken(fcmToken);
+      } else {
+        // FCM returned null (iOS without APNS, or simulator)
+        debugPrint('[Auth] FCM token is null - using SSE fallback');
+        if (FcmService.I.needsSSEFallback && _token != null && _uuid != null) {
+          await FcmService.I.initializeSSEFallback(
+            ApiConfig.baseUrl,
+            _uuid!,
+            _token!,
+          );
+        }
       }
     } catch (e) {
       debugPrint('[Auth] FCM token register error: $e');
       // FCM failed, try SSE fallback if we have auth token
-      if (_token != null && _uuid != null) {
+      if (FcmService.I.needsSSEFallback && _token != null && _uuid != null) {
         try {
           await FcmService.I.initializeSSEFallback(
             ApiConfig.baseUrl,
