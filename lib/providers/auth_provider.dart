@@ -118,34 +118,38 @@ class AuthProvider extends ChangeNotifier {
 
   /// 取得 FCM token 並向後端註冊，若失敗或返回 null 則使用 SSE fallback
   Future<void> _registerFcmToken() async {
+    debugPrint('[Auth] _registerFcmToken() called');
+
     if (_token == null || _uuid == null) {
       debugPrint('[Auth] Missing token or uuid, skipping FCM registration');
       return;
     }
 
+    debugPrint('[Auth] Getting FCM token...');
     try {
       final fcmToken = await FirebaseMessaging.instance.getToken();
+      debugPrint('[Auth] getToken() returned: ${fcmToken?.substring(0, 20) ?? "null"}...');
 
       if (fcmToken != null && fcmToken.isNotEmpty) {
-        debugPrint('[Auth] Got FCM token, registering: $fcmToken');
+        debugPrint('[Auth] ✓ Got FCM token: ${fcmToken.substring(0, 20)}...');
         try {
           await sl<ApiService>().registerFcmToken(fcmToken);
-          debugPrint('[Auth] FCM token registered successfully');
+          debugPrint('[Auth] ✓ FCM token registered successfully');
           return;
         } catch (registerError) {
-          debugPrint('[Auth] FCM registration error: $registerError');
-          debugPrint('[Auth] Initializing SSE fallback due to registration failure');
+          debugPrint('[Auth] ✗ FCM registration ERROR: $registerError');
+          debugPrint('[Auth] → Initializing SSE fallback due to registration failure');
           await _initializeSSEFallback();
           return;
         }
       } else {
-        // FCM returned null (iOS without APNS, or simulator)
-        debugPrint('[Auth] FCM token is null - initializing SSE fallback');
+        debugPrint('[Auth] ✗ FCM token is NULL (iOS/simulator)');
+        debugPrint('[Auth] → Initializing SSE fallback due to null token');
         await _initializeSSEFallback();
       }
     } catch (e) {
-      debugPrint('[Auth] FCM getToken error: $e');
-      debugPrint('[Auth] Initializing SSE fallback due to getToken error');
+      debugPrint('[Auth] ✗ FCM getToken() ERROR: $e');
+      debugPrint('[Auth] → Initializing SSE fallback due to getToken error');
       await _initializeSSEFallback();
     }
   }
