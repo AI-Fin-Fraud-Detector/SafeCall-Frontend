@@ -128,23 +128,31 @@ class AuthProvider extends ChangeNotifier {
 
       if (fcmToken != null && fcmToken.isNotEmpty) {
         debugPrint('[Auth] Got FCM token, registering: $fcmToken');
-        await sl<ApiService>().registerFcmToken(fcmToken);
-        debugPrint('[Auth] FCM token registered successfully');
+        try {
+          await sl<ApiService>().registerFcmToken(fcmToken);
+          debugPrint('[Auth] FCM token registered successfully');
+          return;
+        } catch (registerError) {
+          debugPrint('[Auth] FCM registration error: $registerError');
+          debugPrint('[Auth] Initializing SSE fallback due to registration failure');
+          await _initializeSSEFallback();
+          return;
+        }
       } else {
         // FCM returned null (iOS without APNS, or simulator)
         debugPrint('[Auth] FCM token is null - initializing SSE fallback');
         await _initializeSSEFallback();
       }
     } catch (e) {
-      debugPrint('[Auth] FCM token error: $e');
-      debugPrint('[Auth] Initializing SSE fallback due to FCM error');
+      debugPrint('[Auth] FCM getToken error: $e');
+      debugPrint('[Auth] Initializing SSE fallback due to getToken error');
       await _initializeSSEFallback();
     }
   }
 
   Future<void> _initializeSSEFallback() async {
     try {
-      debugPrint('[Auth] Starting SSE fallback initialization...');
+      debugPrint('[Auth] Starting SSE fallback initialization for userId=$_uuid...');
       await FcmService.I.initializeSSEFallback(
         ApiConfig.baseUrl,
         _uuid!,
@@ -153,6 +161,7 @@ class AuthProvider extends ChangeNotifier {
       debugPrint('[Auth] SSE fallback initialized successfully');
     } catch (e) {
       debugPrint('[Auth] SSE fallback initialization failed: $e');
+      rethrow;
     }
   }
 }

@@ -121,12 +121,7 @@ class FcmService with WidgetsBindingObserver {
   }
 
   Future<void> initializeSSEFallback(String baseUrl, String userId, String token) async {
-    if (!_fcmFailed) {
-      debugPrint('[FCM] FCM is working, SSE fallback not needed');
-      DebugLogger.I.log('FCM is working, SSE fallback not needed');
-      return;
-    }
-
+    debugPrint('[FCM] initializeSSEFallback called, _fcmFailed=$_fcmFailed');
     debugPrint('[FCM] Starting SSE fallback: userId=$userId, baseUrl=$baseUrl');
     DebugLogger.I.log('FCM Starting SSE fallback initialization');
 
