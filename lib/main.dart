@@ -61,9 +61,12 @@ Future<void> main() async {
   // 初始化並取得 FCM token（非同步，不阻擋啟動）
   FcmService.I.initialize().then((token) {
     if (token != null) {
-      // token 等到登入後由 AuthProvider 負責送到後端
       debugPrint('[main] FCM token ready: $token');
+    } else if (FcmService.I.needsSSEFallback) {
+      debugPrint('[main] FCM unavailable, will use SSE fallback after login');
     }
+  }).catchError((e) {
+    debugPrint('[main] FCM initialization error: $e');
   });
 
   runApp(

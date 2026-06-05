@@ -118,35 +118,41 @@ class AuthProvider extends ChangeNotifier {
 
   /// 取得 FCM token 並向後端註冊，若失敗或返回 null 則使用 SSE fallback
   Future<void> _registerFcmToken() async {
+    if (_token == null || _uuid == null) {
+      debugPrint('[Auth] Missing token or uuid, skipping FCM registration');
+      return;
+    }
+
     try {
       final fcmToken = await FirebaseMessaging.instance.getToken();
+
       if (fcmToken != null && fcmToken.isNotEmpty) {
+        debugPrint('[Auth] Got FCM token, registering: $fcmToken');
         await sl<ApiService>().registerFcmToken(fcmToken);
+        debugPrint('[Auth] FCM token registered successfully');
       } else {
         // FCM returned null (iOS without APNS, or simulator)
-        debugPrint('[Auth] FCM token is null - using SSE fallback');
-        if (FcmService.I.needsSSEFallback && _token != null && _uuid != null) {
-          await FcmService.I.initializeSSEFallback(
-            ApiConfig.baseUrl,
-            _uuid!,
-            _token!,
-          );
-        }
+        debugPrint('[Auth] FCM token is null - initializing SSE fallback');
+        await _initializeSSEFallback();
       }
     } catch (e) {
-      debugPrint('[Auth] FCM token register error: $e');
-      // FCM failed, try SSE fallback if we have auth token
-      if (FcmService.I.needsSSEFallback && _token != null && _uuid != null) {
-        try {
-          await FcmService.I.initializeSSEFallback(
-            ApiConfig.baseUrl,
-            _uuid!,
-            _token!,
-          );
-        } catch (sseError) {
-          debugPrint('[Auth] SSE fallback initialization failed: $sseError');
-        }
-      }
+      debugPrint('[Auth] FCM token error: $e');
+      debugPrint('[Auth] Initializing SSE fallback due to FCM error');
+      await _initializeSSEFallback();
+    }
+  }
+
+  Future<void> _initializeSSEFallback() async {
+    try {
+      debugPrint('[Auth] Starting SSE fallback initialization...');
+      await FcmService.I.initializeSSEFallback(
+        ApiConfig.baseUrl,
+        _uuid!,
+        _token!,
+      );
+      debugPrint('[Auth] SSE fallback initialized successfully');
+    } catch (e) {
+      debugPrint('[Auth] SSE fallback initialization failed: $e');
     }
   }
 }

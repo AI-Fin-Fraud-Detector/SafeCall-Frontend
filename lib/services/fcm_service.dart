@@ -123,13 +123,19 @@ class FcmService with WidgetsBindingObserver {
   Future<void> initializeSSEFallback(String baseUrl, String userId, String token) async {
     if (!_fcmFailed) {
       debugPrint('[FCM] FCM is working, SSE fallback not needed');
+      DebugLogger.I.log('FCM is working, SSE fallback not needed');
       return;
     }
 
+    debugPrint('[FCM] Starting SSE fallback: userId=$userId, baseUrl=$baseUrl');
+    DebugLogger.I.log('FCM Starting SSE fallback initialization');
+
     // Subscribe to SSE events and forward to FCM event stream
     SSEService.I.events.listen((event) {
+      debugPrint('[FCM] SSE event received: ${event['type']}');
       _eventCtrl.add(event);
       if (event['type'] == 'incoming_call') {
+        debugPrint('[FCM] Processing incoming_call from SSE');
         _storeMessage(RemoteMessage(
           data: event,
           notification: RemoteNotification(
@@ -140,14 +146,20 @@ class FcmService with WidgetsBindingObserver {
       }
     });
 
-    await SSEService.I.connect(
-      userId: userId,
-      app: 'kebbi',
-      token: token,
-      baseUrl: baseUrl,
-    );
-    debugPrint('[FCM] SSE fallback initialized');
-    DebugLogger.I.log('FCM SSE fallback initialized');
+    try {
+      await SSEService.I.connect(
+        userId: userId,
+        app: 'kebbi',
+        token: token,
+        baseUrl: baseUrl,
+      );
+      debugPrint('[FCM] SSE fallback initialized successfully');
+      DebugLogger.I.log('FCM SSE fallback initialized successfully');
+    } catch (e) {
+      debugPrint('[FCM] SSE fallback connection failed: $e');
+      DebugLogger.I.log('FCM SSE fallback connection failed: $e');
+      rethrow;
+    }
   }
 
   @override
