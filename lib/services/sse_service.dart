@@ -26,9 +26,16 @@ class SSEService {
     required String token,
     required String baseUrl,
   }) async {
+    // If already connected to same user/app, reuse connection
     if (_isConnected && _userId == userId && _app == app) {
-      debugPrint('[SSE] Already connected');
+      debugPrint('[SSE] Already connected to $userId ($app)');
       return;
+    }
+
+    // If connected to different user, disconnect first
+    if (_isConnected && (_userId != userId || _app != app)) {
+      debugPrint('[SSE] Disconnecting from $_userId ($_app) to connect to $userId ($app)');
+      disconnect();
     }
 
     _userId = userId;
@@ -72,28 +79,40 @@ class SSEService {
   }
 
   void _listenToStream() {
+    debugPrint('[SSE] Starting to listen to stream...');
     _response!.stream.transform(utf8.decoder).transform(LineSplitter()).listen(
       (line) {
+        debugPrint('[SSE] Raw line received: "$line"');
+
+        if (line.isEmpty) {
+          debugPrint('[SSE] Empty line, skipping');
+          return;
+        }
+
         if (line.startsWith('data: ')) {
           final data = line.substring(6);
+          debugPrint('[SSE] Data payload: $data');
           try {
             final json = jsonDecode(data) as Map<String, dynamic>;
+            debugPrint('[SSE] ✓ Parsed JSON: ${json['type']}');
             _eventCtrl.add(json);
-            debugPrint('[SSE] Event received: $json');
+            debugPrint('[SSE] ✓ Event emitted to stream');
           } catch (e) {
-            debugPrint('[SSE] Failed to parse event: $e');
+            debugPrint('[SSE] ✗ Failed to parse event: $e');
           }
         } else if (line.startsWith(':')) {
-          debugPrint('[SSE] Heartbeat');
+          debugPrint('[SSE] ❤ Heartbeat received');
+        } else {
+          debugPrint('[SSE] ? Unknown line format');
         }
       },
       onError: (e) {
-        debugPrint('[SSE] Stream error: $e');
+        debugPrint('[SSE] ✗ Stream error: $e');
         _isConnected = false;
         _scheduleReconnect();
       },
       onDone: () {
-        debugPrint('[SSE] Stream closed');
+        debugPrint('[SSE] ⊗ Stream closed');
         _isConnected = false;
         _scheduleReconnect();
       },
@@ -106,10 +125,12 @@ class SSEService {
   }
 
   void disconnect() {
+    debugPrint('[SSE] Disconnecting from $_userId ($_app)...');
     _reconnectTimer?.cancel();
     _response?.stream.drain();
     _isConnected = false;
-    debugPrint('[SSE] Disconnected');
+    _response = null;
+    debugPrint('[SSE] ✓ Disconnected and cleaned up');
   }
 
   void dispose() {
