@@ -128,12 +128,24 @@ Future<void> _checkActiveCallAndNavigate(
     DebugLogger.I.log('[main] Backend active call check: $hasActiveCall');
 
     if (hasActiveCall) {
-      // User is in another call - navigate to that call page
+      // User is in another call - navigate to that call page and fetch messages
       final activeConversationId = response['conversation_id'] as String? ?? '';
       final activePhoneNumber = response['phone_number'] as String? ?? '';
       final activeCallerName = response['caller_name'] as String?;
 
-      DebugLogger.I.log('[main] User in active call, navigating to ongoing call');
+      DebugLogger.I.log('[main] User in active call, fetching conversation messages');
+
+      // Fetch conversation messages to sync with backend
+      if (activeConversationId.isNotEmpty) {
+        try {
+          await apiService.dio.get('/api/fraud/conversations/$activeConversationId/messages');
+          DebugLogger.I.log('[main] Conversation messages synced');
+        } catch (e) {
+          DebugLogger.I.log('[main] Failed to fetch messages: $e');
+        }
+      }
+
+      DebugLogger.I.log('[main] Navigating to ongoing call');
       nav.pushAndRemoveUntil(
         MaterialPageRoute(
           builder: (_) => CallPage(

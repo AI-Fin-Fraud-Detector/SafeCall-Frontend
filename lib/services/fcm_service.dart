@@ -5,8 +5,10 @@ import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/widgets.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'api_service.dart';
 import 'debug_logger.dart';
 import 'sse_service.dart';
+import '../di/service_locator.dart';
 
 const _kNotifHistoryKey = 'fcm_notif_history';
 const _kFcmFailedKey = 'fcm_failed_flag';
@@ -206,6 +208,9 @@ class FcmService with WidgetsBindingObserver {
       DebugLogger.I.log('[FCM] App resumed, checking notification state...');
       loadPersistedNotif();
 
+      // Sync active call and messages when app resumes
+      _syncActiveCallOnResume();
+
       // If using SSE fallback, verify connection is still alive
       if (_fcmFailed) {
         DebugLogger.I.log('[FCM] App resumed - SSE fallback is active');
@@ -213,6 +218,25 @@ class FcmService with WidgetsBindingObserver {
       }
     } else if (state == AppLifecycleState.paused) {
       DebugLogger.I.log('[FCM] App paused');
+    }
+  }
+
+  Future<void> _syncActiveCallOnResume() async {
+    try {
+      final apiService = sl<ApiService>();
+      final response = await apiService.dio.get('/api/fraud/active-call');
+      final data = response.data as Map<String, dynamic>;
+
+      if (data['has_active_call'] == true) {
+        final conversationId = data['conversation_id'] as String?;
+        if (conversationId?.isNotEmpty == true) {
+          DebugLogger.I.log('[FCM] Syncing messages for active call: $conversationId');
+          await apiService.dio.get('/api/fraud/conversations/$conversationId/messages');
+          DebugLogger.I.log('[FCM] Messages synced successfully');
+        }
+      }
+    } catch (e) {
+      DebugLogger.I.log('[FCM] Failed to sync active call: $e');
     }
   }
 
