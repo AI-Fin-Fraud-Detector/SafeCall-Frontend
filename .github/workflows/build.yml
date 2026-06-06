@@ -65,6 +65,11 @@ jobs:
           cache: true
 
       - run: flutter pub get
+      - name: Install CocoaPods dependencies
+        run: |
+          cd ios
+          pod install
+          cd ..
       - run: flutter build ios --release --no-codesign
 
       - name: Package into unsigned IPA

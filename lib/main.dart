@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
 import 'package:pwa_install/pwa_install.dart';
+import 'package:get_it/get_it.dart';
 
 import 'constants.dart';
 import 'di/service_locator.dart';
@@ -54,9 +55,15 @@ Future<void> main() async {
 
   // FCM 初始化 — 收到 incoming_call 時跳轉到 CallPage
   FcmService.I.onIncomingCall = (conversationId, phoneNumber, callerName) {
+    DebugLogger.I.log('[main] onIncomingCall triggered: $phoneNumber ($callerName)');
     final nav = navigatorKey.currentState;
-    if (nav == null) return;
+    DebugLogger.I.log('[main] Navigator available: ${nav != null}');
+    if (nav == null) {
+      DebugLogger.I.log('[main] Cannot navigate - navigator is null');
+      return;
+    }
 
+    DebugLogger.I.log('[main] Navigating to CallPage');
     nav.pushAndRemoveUntil(
       MaterialPageRoute(
         builder: (_) => CallPage(
@@ -67,6 +74,29 @@ Future<void> main() async {
       ),
       (route) => route.isFirst,
     );
+  };
+
+  // Handle remote hangup (when other side ends call)
+  FcmService.I.onRemoteHangup = () {
+    DebugLogger.I.log('[main] Remote hangup callback triggered');
+    try {
+      final context = navigatorKey.currentContext;
+      DebugLogger.I.log('[main] Context available: ${context != null}');
+      if (context != null) {
+        final callProvider = Provider.of<CallProvider>(context, listen: false);
+        DebugLogger.I.log('[main] CallProvider inCall: ${callProvider.inCall}');
+        if (callProvider.inCall) {
+          DebugLogger.I.log('[main] Ending call due to remote hangup (NOT sending API)');
+          callProvider.endCallFromRemote();
+        } else {
+          DebugLogger.I.log('[main] Not in call, ignoring remote hangup');
+        }
+      } else {
+        DebugLogger.I.log('[main] No context available for remote hangup');
+      }
+    } catch (e) {
+      DebugLogger.I.log('[main] Error handling remote hangup: $e');
+    }
   };
 
   // 初始化並取得 FCM token（非同步，不阻擋啟動）

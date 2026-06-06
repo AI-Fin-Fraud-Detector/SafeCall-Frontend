@@ -73,4 +73,29 @@ class PermissionsService {
     DebugLogger.I.log('[Permissions] Opening app settings...');
     await openAppSettings();
   }
+
+  /// Check and request microphone with fallback to settings
+  Future<bool> requestMicrophoneWithFallback() async {
+    final status = await requestMicrophone();
+    if (status) return true;
+
+    if (await isMicrophonePermanentlyDenied()) {
+      DebugLogger.I.log('[Permissions] Microphone permanently denied, opening settings');
+      await openAppSettings();
+    }
+    return false;
+  }
+
+  /// Check and request camera with fallback to settings
+  Future<bool> requestCameraWithFallback() async {
+    final status = await requestCamera();
+    if (status) return true;
+
+    final camStatus = await Permission.camera.status;
+    if (camStatus.isPermanentlyDenied) {
+      DebugLogger.I.log('[Permissions] Camera permanently denied, opening settings');
+      await openAppSettings();
+    }
+    return false;
+  }
 }
