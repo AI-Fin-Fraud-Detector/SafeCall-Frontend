@@ -121,7 +121,8 @@ Future<void> _checkActiveCallAndNavigate(
 ) async {
   try {
     final apiService = GetIt.I<ApiService>();
-    final response = await apiService.get('/api/fraud/active-call');
+    final dioResponse = await apiService.dio.get('/api/fraud/active-call');
+    final response = dioResponse.data as Map<String, dynamic>;
 
     final hasActiveCall = response['has_active_call'] as bool? ?? false;
     DebugLogger.I.log('[main] Backend active call check: $hasActiveCall');
