@@ -32,17 +32,19 @@ class AuthProvider extends ChangeNotifier {
   String? get phoneNumber => _phoneNumber;
 
   Future<void> init() async {
-    _token = await SecureStorage.readToken();
-    if (_token != null && _token!.isNotEmpty) {
-      sl<ApiService>().setAccessToken(_token);
-      _registerFcmToken();
-    }
+    // Load all auth data FIRST before calling _registerFcmToken
     try {
+      _token = await SecureStorage.readToken();
       _uuid = await SecureStorage.readUuid();
       _name = await SecureStorage.readName();
       _email = await SecureStorage.readEmail();
       _phoneNumber = await SecureStorage.readPhone();
     } catch (_) {}
+
+    if (_token != null && _token!.isNotEmpty) {
+      sl<ApiService>().setAccessToken(_token);
+      _registerFcmToken();
+    }
     notifyListeners();
   }
 
