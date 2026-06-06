@@ -128,12 +128,20 @@ Future<void> _checkActiveCallAndNavigate(
     DebugLogger.I.log('[main] Backend active call check: $hasActiveCall');
 
     if (hasActiveCall) {
-      // User is in another call - navigate to that call page and fetch messages
       final activeConversationId = response['conversation_id'] as String? ?? '';
       final activePhoneNumber = response['phone_number'] as String? ?? '';
       final activeCallerName = response['caller_name'] as String?;
 
-      DebugLogger.I.log('[main] User in active call, fetching conversation messages');
+      // Check if the active call is the same as the notification conversation
+      if (activeConversationId == conversationId) {
+        // Same call - this is the incoming call we just tapped
+        DebugLogger.I.log('[main] Showing tapped incoming call: $conversationId');
+      } else {
+        // Different call - user is already in another call, switch to it
+        DebugLogger.I.log('[main] User in different call, switching from $conversationId to $activeConversationId');
+        phoneNumber = activePhoneNumber;
+        callerName = activeCallerName;
+      }
 
       // Fetch conversation messages to sync with backend
       if (activeConversationId.isNotEmpty) {
@@ -145,20 +153,20 @@ Future<void> _checkActiveCallAndNavigate(
         }
       }
 
-      DebugLogger.I.log('[main] Navigating to ongoing call');
+      DebugLogger.I.log('[main] Navigating to call');
       nav.pushAndRemoveUntil(
         MaterialPageRoute(
           builder: (_) => CallPage(
             mode: CallMode.incoming,
-            contactName: activeCallerName,
-            callerNumber: activePhoneNumber.isNotEmpty ? activePhoneNumber : null,
+            contactName: callerName,
+            callerNumber: phoneNumber.isNotEmpty ? phoneNumber : null,
           ),
         ),
         (route) => route.isFirst,
       );
     } else {
-      // No active call - show incoming call screen
-      DebugLogger.I.log('[main] No active call, showing incoming call screen');
+      // No active call - verify the incoming call still exists and navigate to it
+      DebugLogger.I.log('[main] No active call, showing incoming call: $conversationId');
       nav.pushAndRemoveUntil(
         MaterialPageRoute(
           builder: (_) => CallPage(
@@ -172,7 +180,7 @@ Future<void> _checkActiveCallAndNavigate(
     }
   } catch (e) {
     DebugLogger.I.log('[main] Error checking active call: $e');
-    // Fallback: show incoming call screen
+    // Fallback: show incoming call screen from notification
     nav.pushAndRemoveUntil(
       MaterialPageRoute(
         builder: (_) => CallPage(
