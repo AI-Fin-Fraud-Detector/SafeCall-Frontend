@@ -66,6 +66,9 @@ class FcmService with WidgetsBindingObserver {
   void Function(String conversationId, String phoneNumber, String? callerName)?
       onIncomingCall;
 
+  /// Remote hangup callback (when other side hangs up)
+  void Function()? onRemoteHangup;
+
   bool _fcmFailed = false;
   bool get needsSSEFallback => _fcmFailed;
 
@@ -247,7 +250,7 @@ class FcmService with WidgetsBindingObserver {
   }
 
   Future<void> _storeMessage(RemoteMessage message) async {
-    DebugLogger.I.log('[FCM] Message received: ${message.data}');
+    DebugLogger.I.log('[FCM/SSE] Message received: ${message.data}');
     final data = message.data;
     final type = data['type'] as String? ?? '';
 
@@ -271,7 +274,7 @@ class FcmService with WidgetsBindingObserver {
     // 所有 type 都 emit 給 CallProvider 處理
     if (type.isNotEmpty) {
       final convId = data['conversation_id'] as String? ?? '';
-      DebugLogger.I.log('FCM event: $type${convId.isNotEmpty ? " conv=$convId" : ""}');
+      DebugLogger.I.log('FCM/SSE event: $type${convId.isNotEmpty ? " conv=$convId" : ""}');
       _eventCtrl.add(Map<String, dynamic>.from(data));
     }
   }
@@ -298,6 +301,12 @@ class FcmService with WidgetsBindingObserver {
       if (conversationId.isNotEmpty) {
         DebugLogger.I.log('[$source] → Triggering onIncomingCall navigation');
         onIncomingCall?.call(conversationId, phoneNumber, callerName);
+      }
+    } else if (type == 'call_event') {
+      final action = data['action'] as String? ?? '';
+      if (action == 'hangup') {
+        DebugLogger.I.log('[$source] → Remote hangup received, ending call locally');
+        onRemoteHangup?.call();
       }
     }
   }

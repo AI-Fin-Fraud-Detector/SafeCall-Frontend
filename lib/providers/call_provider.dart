@@ -9,6 +9,7 @@ import '../models/scam_event.dart';
 import '../models/ws_message.dart';
 import '../models/stats_record.dart';
 import '../services/fcm_service.dart';
+import '../services/debug_logger.dart';
 import '../services/websocket_service.dart';
 import '../services/api_service.dart';
 import '../services/audio_service.dart';
@@ -556,6 +557,14 @@ class CallProvider extends ChangeNotifier {
     } else if (_conversationId != null) {
       await sl<ApiService>().callEnd();
     }
+    _endCall();
+    _clearFcmCall();
+    notifyListeners();
+  }
+
+  /// End call locally WITHOUT sending hangup API (for remote hangup events)
+  void endCallFromRemote() {
+    DebugLogger.I.log('[CallProvider] Ending call due to remote hangup');
     _endCall();
     _clearFcmCall();
     notifyListeners();
