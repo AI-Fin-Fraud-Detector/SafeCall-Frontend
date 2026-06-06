@@ -4,6 +4,8 @@ import 'dart:convert';
 import 'package:flutter/widgets.dart';
 import 'package:http/http.dart' as http;
 
+import 'debug_logger.dart';
+
 class SSEService {
   SSEService._();
   static final SSEService I = SSEService._();
@@ -53,11 +55,15 @@ class SSEService {
     final baseUrl = _baseUrl;
 
     if (userId == null || app == null || token == null || baseUrl == null) {
+      debugPrint('[SSE] Missing connection parameters');
       return;
     }
 
     try {
       final uri = Uri.parse('$baseUrl/api/push/events/$app');
+      debugPrint('[SSE] Connecting to: $uri');
+      DebugLogger.I.log('[SSE] Connecting to: $baseUrl/api/push/events/$app');
+
       final request = http.Request('GET', uri)
         ..headers['Authorization'] = 'Bearer $token'
         ..headers['X-User-Id'] = userId;
@@ -66,53 +72,57 @@ class SSEService {
 
       if (_response!.statusCode == 200) {
         _isConnected = true;
-        debugPrint('[SSE] Connected: $userId ($app)');
+        debugPrint('[SSE] ✓ Connected: $userId ($app)');
+        DebugLogger.I.log('[SSE] ✓ Connected successfully');
         _listenToStream();
       } else {
-        debugPrint('[SSE] Connection failed: ${_response!.statusCode}');
+        debugPrint('[SSE] ✗ Connection failed: ${_response!.statusCode}');
+        DebugLogger.I.log('[SSE] ✗ HTTP ${_response!.statusCode}');
         _scheduleReconnect();
       }
     } catch (e) {
-      debugPrint('[SSE] Connection error: $e');
+      debugPrint('[SSE] ✗ Connection error: $e');
+      DebugLogger.I.log('[SSE] ✗ Connection error: $e');
       _scheduleReconnect();
     }
   }
 
   void _listenToStream() {
     debugPrint('[SSE] Starting to listen to stream...');
+    DebugLogger.I.log('[SSE] Stream listener attached, waiting for events...');
+
     _response!.stream.transform(utf8.decoder).transform(LineSplitter()).listen(
       (line) {
-        debugPrint('[SSE] Raw line received: "$line"');
-
         if (line.isEmpty) {
-          debugPrint('[SSE] Empty line, skipping');
           return;
         }
 
         if (line.startsWith('data: ')) {
           final data = line.substring(6);
-          debugPrint('[SSE] Data payload: $data');
           try {
             final json = jsonDecode(data) as Map<String, dynamic>;
-            debugPrint('[SSE] ✓ Parsed JSON: ${json['type']}');
+            final eventType = json['type'] ?? 'unknown';
+            debugPrint('[SSE] ✓ Parsed JSON: $eventType');
+            DebugLogger.I.log('[SSE] ✓ Event received: $eventType');
             _eventCtrl.add(json);
             debugPrint('[SSE] ✓ Event emitted to stream');
           } catch (e) {
             debugPrint('[SSE] ✗ Failed to parse event: $e');
+            DebugLogger.I.log('[SSE] ✗ Parse error: $e');
           }
         } else if (line.startsWith(':')) {
-          debugPrint('[SSE] ❤ Heartbeat received');
-        } else {
-          debugPrint('[SSE] ? Unknown line format');
+          debugPrint('[SSE] ❤ Heartbeat');
         }
       },
       onError: (e) {
         debugPrint('[SSE] ✗ Stream error: $e');
+        DebugLogger.I.log('[SSE] ✗ Stream error: $e');
         _isConnected = false;
         _scheduleReconnect();
       },
       onDone: () {
         debugPrint('[SSE] ⊗ Stream closed');
+        DebugLogger.I.log('[SSE] ⊗ Stream closed, will reconnect');
         _isConnected = false;
         _scheduleReconnect();
       },
