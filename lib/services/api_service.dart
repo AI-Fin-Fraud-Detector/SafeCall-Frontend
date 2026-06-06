@@ -70,7 +70,7 @@ class ApiService {
   Future<LoginResponse> login(LoginRequest req) async {
     if (ApiConfig.mockLogin) return _mockLogin(req);
 
-    debugPrint('[API] POST ${_dio.options.baseUrl}${ApiConfig.loginPath}');
+    DebugLogger.I.log('[API] POST ${_dio.options.baseUrl}${ApiConfig.loginPath}');
 
     // Step 1: 取得 access_token（JSON body）
     final loginResp = await _dio.post(
@@ -96,7 +96,7 @@ class ApiService {
     setAccessToken(accessToken);
 
     // Step 3: 取得使用者資訊（uuid / name / email / phone_number）
-    debugPrint('[API] GET ${_dio.options.baseUrl}${ApiConfig.statusPath}');
+    DebugLogger.I.log('[API] GET ${_dio.options.baseUrl}${ApiConfig.statusPath}');
     final statusResp = await _dio.get(ApiConfig.statusPath);
 
     if (statusResp.statusCode != 200) {
@@ -200,10 +200,10 @@ class ApiService {
           'fcm_token': fcmToken,
         },
       );
-      debugPrint('[API] FCM token registered');
+      DebugLogger.I.log('[API] FCM token registered');
       DebugLogger.I.log('subscribe/kebbi ← ${resp.statusCode} ${resp.data}');
     } catch (e) {
-      debugPrint('[API] FCM token registration failed: $e');
+      DebugLogger.I.log('[API] FCM token registration failed: $e');
       DebugLogger.I.log('subscribe/kebbi ERROR: $e');
     }
   }

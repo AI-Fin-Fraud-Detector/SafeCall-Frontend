@@ -1,3 +1,4 @@
+import '/services/debug_logger.dart';
 import 'dart:async';
 import 'dart:convert';
 
@@ -78,7 +79,7 @@ class WebSocketService {
 
     _socket!.onConnect((_) {
       _connected = true;
-      debugPrint('[SIO] connected, id=${_socket?.id}');
+      DebugLogger.I.log('[SIO] connected, id=${_socket?.id}');
       _msgCtrl.add(WsMessage.fromJson({
         'type': 'connection_success',
         'connection_id': _socket?.id ?? '',
@@ -87,7 +88,7 @@ class WebSocketService {
     });
 
     _socket!.onConnectError((err) {
-      debugPrint('[SIO] connect error: $err');
+      DebugLogger.I.log('[SIO] connect error: $err');
       _connected = false;
       _msgCtrl.add(WsMessage.fromJson({
         'type': 'error',
@@ -96,12 +97,12 @@ class WebSocketService {
     });
 
     _socket!.onDisconnect((reason) {
-      debugPrint('[SIO] disconnected: $reason');
+      DebugLogger.I.log('[SIO] disconnected: $reason');
       _connected = false;
     });
 
     _socket!.onError((err) {
-      debugPrint('[SIO] error: $err');
+      DebugLogger.I.log('[SIO] error: $err');
       _msgCtrl.add(WsMessage.fromJson({
         'type': 'error',
         'error': err.toString(),
@@ -120,7 +121,7 @@ class WebSocketService {
           }
         }
       } catch (e) {
-        debugPrint('[SIO] audio_chunk parse error: $e');
+        DebugLogger.I.log('[SIO] audio_chunk parse error: $e');
       }
     });
 

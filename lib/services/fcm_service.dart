@@ -14,7 +14,7 @@ const _kFcmFailedKey = 'fcm_failed_flag';
 /// 背景訊息 handler — 必須是 top-level function，跑在獨立 isolate
 @pragma('vm:entry-point')
 Future<void> _backgroundMessageHandler(RemoteMessage message) async {
-  debugPrint('[FCM] Background message: ${message.data}');
+  DebugLogger.I.log('[FCM] Background message: ${message.data}');
   final data = message.data;
   if (data['type'] == 'incoming_call') {
     final prefs = await SharedPreferences.getInstance();
@@ -74,10 +74,10 @@ class FcmService with WidgetsBindingObserver {
       final prefs = await SharedPreferences.getInstance();
       _fcmFailed = prefs.getBool(_kFcmFailedKey) ?? false;
       if (_fcmFailed) {
-        debugPrint('[FCM] Loaded persistent FCM failure state: _fcmFailed=true');
+        DebugLogger.I.log('[FCM] Loaded persistent FCM failure state: _fcmFailed=true');
       }
     } catch (e) {
-      debugPrint('[FCM] Failed to load FCM failure state: $e');
+      DebugLogger.I.log('[FCM] Failed to load FCM failure state: $e');
     }
   }
 
@@ -85,9 +85,9 @@ class FcmService with WidgetsBindingObserver {
     try {
       final prefs = await SharedPreferences.getInstance();
       await prefs.setBool(_kFcmFailedKey, failed);
-      debugPrint('[FCM] Saved FCM failure state: failed=$failed');
+      DebugLogger.I.log('[FCM] Saved FCM failure state: failed=$failed');
     } catch (e) {
-      debugPrint('[FCM] Failed to save FCM failure state: $e');
+      DebugLogger.I.log('[FCM] Failed to save FCM failure state: $e');
     }
   }
 
@@ -104,7 +104,7 @@ class FcmService with WidgetsBindingObserver {
       sound: true,
       provisional: false,
     );
-    debugPrint('[FCM] Permission: ${settings.authorizationStatus}');
+    DebugLogger.I.log('[FCM] Permission: ${settings.authorizationStatus}');
     DebugLogger.I.log('FCM permission: ${settings.authorizationStatus}');
 
     await loadPersistedNotif();
@@ -117,11 +117,11 @@ class FcmService with WidgetsBindingObserver {
 
     try {
       final fcmToken = await FirebaseMessaging.instance.getToken();
-      debugPrint('[FCM] Token: $fcmToken');
+      DebugLogger.I.log('[FCM] Token: $fcmToken');
       DebugLogger.I.log('FCM token: ${fcmToken ?? "null"}');
 
       if (fcmToken == null || fcmToken.isEmpty) {
-        debugPrint('[FCM] ✗ getToken returned null/empty - will use SSE fallback');
+        DebugLogger.I.log('[FCM] ✗ getToken returned null/empty - will use SSE fallback');
         DebugLogger.I.log('FCM getToken returned null');
         _fcmFailed = true;
         await _saveFcmFailureState(true);
@@ -129,7 +129,7 @@ class FcmService with WidgetsBindingObserver {
       }
 
       FirebaseMessaging.instance.onTokenRefresh.listen((newToken) {
-        debugPrint('[FCM] Token refreshed: $newToken');
+        DebugLogger.I.log('[FCM] Token refreshed: $newToken');
         DebugLogger.I.log('FCM token refreshed: $newToken');
         _onTokenRefreshed?.call(newToken);
       });
@@ -137,14 +137,14 @@ class FcmService with WidgetsBindingObserver {
       return fcmToken;
     } catch (e) {
       final errorStr = e.toString();
-      debugPrint('[FCM] getToken error: $errorStr');
+      DebugLogger.I.log('[FCM] getToken error: $errorStr');
       DebugLogger.I.log('FCM getToken error: $errorStr');
 
       if (errorStr.contains('MISSING_INSTANCEID_SERVICE') ||
           errorStr.contains('An unknown error occurred') ||
           errorStr.contains('APNS token') ||
           errorStr.contains('null')) {
-        debugPrint('[FCM] FCM unavailable - will use SSE fallback');
+        DebugLogger.I.log('[FCM] FCM unavailable - will use SSE fallback');
         DebugLogger.I.log('FCM unavailable - will use SSE fallback');
       }
 
@@ -155,14 +155,14 @@ class FcmService with WidgetsBindingObserver {
   }
 
   Future<void> initializeSSEFallback(String baseUrl, String userId, String token) async {
-    debugPrint('[FCM] initializeSSEFallback called, _fcmFailed=$_fcmFailed');
-    debugPrint('[FCM] Starting SSE fallback: userId=$userId, baseUrl=$baseUrl');
+    DebugLogger.I.log('[FCM] initializeSSEFallback called, _fcmFailed=$_fcmFailed');
+    DebugLogger.I.log('[FCM] Starting SSE fallback: userId=$userId, baseUrl=$baseUrl');
     DebugLogger.I.log('FCM Starting SSE fallback initialization');
 
     // Subscribe to SSE events using unified handler (same as FCM)
-    debugPrint('[FCM] Attaching SSE event listener...');
+    DebugLogger.I.log('[FCM] Attaching SSE event listener...');
     SSEService.I.events.listen((event) {
-      debugPrint('[SSE] ↓ Event received: ${event['type']}');
+      DebugLogger.I.log('[SSE] ↓ Event received: ${event['type']}');
 
       // Create RemoteMessage from SSE event (same format as FCM)
       final remoteMessage = RemoteMessage(
@@ -176,7 +176,7 @@ class FcmService with WidgetsBindingObserver {
       // Use unified handler to process SSE events same as FCM events
       _handleNotification(remoteMessage, source: 'SSE');
     });
-    debugPrint('[FCM] ✓ SSE event listener attached (using unified handler)');
+    DebugLogger.I.log('[FCM] ✓ SSE event listener attached (using unified handler)');
 
     try {
       await SSEService.I.connect(
@@ -185,10 +185,10 @@ class FcmService with WidgetsBindingObserver {
         token: token,
         baseUrl: baseUrl,
       );
-      debugPrint('[FCM] SSE fallback initialized successfully');
+      DebugLogger.I.log('[FCM] SSE fallback initialized successfully');
       DebugLogger.I.log('FCM SSE fallback initialized successfully');
     } catch (e) {
-      debugPrint('[FCM] SSE fallback connection failed: $e');
+      DebugLogger.I.log('[FCM] SSE fallback connection failed: $e');
       DebugLogger.I.log('FCM SSE fallback connection failed: $e');
       rethrow;
     }
@@ -197,16 +197,16 @@ class FcmService with WidgetsBindingObserver {
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
-      debugPrint('[FCM] App resumed, checking notification state...');
+      DebugLogger.I.log('[FCM] App resumed, checking notification state...');
       loadPersistedNotif();
 
       // If using SSE fallback, verify connection is still alive
       if (_fcmFailed) {
-        debugPrint('[FCM] App resumed - SSE fallback is active');
+        DebugLogger.I.log('[FCM] App resumed - SSE fallback is active');
         // Note: SSE service will auto-reconnect if connection is lost
       }
     } else if (state == AppLifecycleState.paused) {
-      debugPrint('[FCM] App paused');
+      DebugLogger.I.log('[FCM] App paused');
     }
   }
 
@@ -222,7 +222,7 @@ class FcmService with WidgetsBindingObserver {
           .toList();
       notifHistory.value = parsed;
     } catch (e) {
-      debugPrint('[FCM] Failed to parse notif history: $e');
+      DebugLogger.I.log('[FCM] Failed to parse notif history: $e');
     }
   }
 
@@ -244,7 +244,7 @@ class FcmService with WidgetsBindingObserver {
   }
 
   Future<void> _storeMessage(RemoteMessage message) async {
-    debugPrint('[FCM] Message received: ${message.data}');
+    DebugLogger.I.log('[FCM] Message received: ${message.data}');
     final data = message.data;
     final type = data['type'] as String? ?? '';
 
@@ -278,7 +278,7 @@ class FcmService with WidgetsBindingObserver {
     final data = message.data;
     final type = data['type'] as String? ?? '';
 
-    debugPrint('[$source] → Handling notification: type=$type');
+    DebugLogger.I.log('[$source] → Handling notification: type=$type');
 
     // Store message (to history and emit to stream)
     await _storeMessage(message);
@@ -293,7 +293,7 @@ class FcmService with WidgetsBindingObserver {
           detail['caller_name'] as String? ?? data['caller_name'] as String?;
 
       if (conversationId.isNotEmpty) {
-        debugPrint('[$source] → Triggering onIncomingCall navigation');
+        DebugLogger.I.log('[$source] → Triggering onIncomingCall navigation');
         onIncomingCall?.call(conversationId, phoneNumber, callerName);
       }
     }

@@ -1,3 +1,4 @@
+import '/services/debug_logger.dart';
 import 'package:flutter/foundation.dart';
 import 'package:speech_to_text/speech_to_text.dart';
 import 'package:speech_to_text/speech_recognition_result.dart';
@@ -17,14 +18,14 @@ class WebSpeechService {
     if (_initialized) return true;
     _initialized = await _speech.initialize(
       onStatus: (status) {
-        debugPrint('[WebSpeech] Status: $status');
+        DebugLogger.I.log('[WebSpeech] Status: $status');
       },
       onError: (error) {
-        debugPrint('[WebSpeech] Error: $error');
+        DebugLogger.I.log('[WebSpeech] Error: $error');
         _callback?.call('', true);
       },
     );
-    debugPrint('[WebSpeech] Initialized: $_initialized');
+    DebugLogger.I.log('[WebSpeech] Initialized: $_initialized');
     return _initialized;
   }
 

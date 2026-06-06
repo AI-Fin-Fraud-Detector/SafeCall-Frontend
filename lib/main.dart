@@ -8,6 +8,7 @@ import 'constants.dart';
 import 'di/service_locator.dart';
 import 'providers/auth_provider.dart';
 import 'providers/call_provider.dart';
+import 'services/debug_logger.dart';
 import 'services/fcm_service.dart';
 import 'services/kebbi_service.dart';
 import 'widgets/auth_guard.dart';
@@ -35,7 +36,7 @@ Future<void> main() async {
   } catch (_) {}
 
   PWAInstall().setup(installCallback: () {
-    debugPrint('APP INSTALLED!');
+    DebugLogger.I.log('APP INSTALLED!');
   });
 
   KebbiService.init();
@@ -61,12 +62,12 @@ Future<void> main() async {
   // 初始化並取得 FCM token（非同步，不阻擋啟動）
   FcmService.I.initialize().then((token) {
     if (token != null) {
-      debugPrint('[main] FCM token ready: $token');
+      DebugLogger.I.log('[main] FCM token ready: $token');
     } else if (FcmService.I.needsSSEFallback) {
-      debugPrint('[main] FCM unavailable, will use SSE fallback after login');
+      DebugLogger.I.log('[main] FCM unavailable, will use SSE fallback after login');
     }
   }).catchError((e) {
-    debugPrint('[main] FCM initialization error: $e');
+    DebugLogger.I.log('[main] FCM initialization error: $e');
   });
 
   runApp(
