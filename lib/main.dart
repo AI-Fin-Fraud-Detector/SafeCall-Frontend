@@ -58,27 +58,17 @@ Future<void> main() async {
   });
 
 
-  // FCM 初始化 — 收到 incoming_call 時跳轉到 CallPage
+  // 用戶點擊通知時 (cases 2 & 3: tap notification while backgrounded or foreground)
   FcmService.I.onIncomingCall = (conversationId, phoneNumber, callerName) {
-    DebugLogger.I.log('[main] onIncomingCall triggered: $phoneNumber ($callerName)');
+    DebugLogger.I.log('[main] Incoming call notification tapped: $phoneNumber ($callerName)');
     final nav = navigatorKey.currentState;
-    DebugLogger.I.log('[main] Navigator available: ${nav != null}');
     if (nav == null) {
       DebugLogger.I.log('[main] Cannot navigate - navigator is null');
       return;
     }
 
-    DebugLogger.I.log('[main] Navigating to CallPage');
-    nav.pushAndRemoveUntil(
-      MaterialPageRoute(
-        builder: (_) => CallPage(
-          mode: CallMode.incoming,
-          contactName: callerName,
-          callerNumber: phoneNumber.isNotEmpty ? phoneNumber : null,
-        ),
-      ),
-      (route) => route.isFirst,
-    );
+    // Check backend for active call to decide where to navigate
+    _checkActiveCallAndNavigate(nav, conversationId, phoneNumber, callerName);
   };
 
   // Handle remote hangup (when other side ends call)
@@ -114,7 +104,73 @@ Future<void> main() async {
   }).catchError((e) {
     DebugLogger.I.log('[main] FCM initialization error: $e');
   });
+}
 
+/// Check if user has active call, navigate accordingly
+Future<void> _checkActiveCallAndNavigate(
+  NavigatorState nav,
+  String conversationId,
+  String phoneNumber,
+  String? callerName,
+) async {
+  try {
+    final apiService = GetIt.I<ApiService>();
+    final response = await apiService.get('/api/fraud/active-call');
+
+    final hasActiveCall = response['has_active_call'] as bool? ?? false;
+    DebugLogger.I.log('[main] Backend active call check: $hasActiveCall');
+
+    if (hasActiveCall) {
+      // User is in another call - navigate to that call page
+      final activeConversationId = response['conversation_id'] as String? ?? '';
+      final activePhoneNumber = response['phone_number'] as String? ?? '';
+      final activeCallerName = response['caller_name'] as String?;
+
+      DebugLogger.I.log('[main] User in active call, navigating to ongoing call');
+      nav.pushAndRemoveUntil(
+        MaterialPageRoute(
+          builder: (_) => CallPage(
+            mode: CallMode.incoming,
+            contactName: activeCallerName,
+            callerNumber: activePhoneNumber.isNotEmpty ? activePhoneNumber : null,
+          ),
+        ),
+        (route) => route.isFirst,
+      );
+    } else {
+      // No active call - show incoming call screen
+      DebugLogger.I.log('[main] No active call, showing incoming call screen');
+      nav.pushAndRemoveUntil(
+        MaterialPageRoute(
+          builder: (_) => CallPage(
+            mode: CallMode.incoming,
+            contactName: callerName,
+            callerNumber: phoneNumber.isNotEmpty ? phoneNumber : null,
+          ),
+        ),
+        (route) => route.isFirst,
+      );
+    }
+  } catch (e) {
+    DebugLogger.I.log('[main] Error checking active call: $e');
+    // Fallback: show incoming call screen
+    nav.pushAndRemoveUntil(
+      MaterialPageRoute(
+        builder: (_) => CallPage(
+          mode: CallMode.incoming,
+          contactName: callerName,
+          callerNumber: phoneNumber.isNotEmpty ? phoneNumber : null,
+        ),
+      ),
+      (route) => route.isFirst,
+    );
+  }
+}
+
+  _runApp();
+}
+
+void _runApp() {
   runApp(
     MultiProvider(
       providers: [
