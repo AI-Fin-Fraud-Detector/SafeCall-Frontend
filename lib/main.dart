@@ -9,6 +9,7 @@ import 'constants.dart';
 import 'di/service_locator.dart';
 import 'providers/auth_provider.dart';
 import 'providers/call_provider.dart';
+import 'services/api_service.dart';
 import 'services/debug_logger.dart';
 import 'services/fcm_service.dart';
 import 'services/kebbi_service.dart';
@@ -30,6 +31,9 @@ import 'pages/conversations_page.dart';
 /// 全域 NavigatorKey — 供 FcmService 在 widget tree 外部導航使用
 final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
 
+/// 全域 CallProvider — 供 notification handler 使用
+late CallProvider callProvider;
+
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
@@ -47,7 +51,7 @@ Future<void> main() async {
 
   // Initialize CallProvider EARLY so its FCM event listener is attached
   // before any notifications arrive via SSE/FCM
-  final callProvider = CallProvider();
+  callProvider = CallProvider();
   DebugLogger.I.log('[main] CallProvider initialized early for event listener');
 
   // Request required permissions on app startup
@@ -104,6 +108,8 @@ Future<void> main() async {
   }).catchError((e) {
     DebugLogger.I.log('[main] FCM initialization error: $e');
   });
+
+  _runApp();
 }
 
 /// Check if user has active call, navigate accordingly
@@ -165,9 +171,6 @@ Future<void> _checkActiveCallAndNavigate(
       (route) => route.isFirst,
     );
   }
-}
-
-  _runApp();
 }
 
 void _runApp() {
