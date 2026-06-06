@@ -9,6 +9,7 @@ import 'api_service.dart';
 import 'debug_logger.dart';
 import 'sse_service.dart';
 import '../di/service_locator.dart';
+import '../providers/call_provider.dart';
 
 const _kNotifHistoryKey = 'fcm_notif_history';
 const _kFcmFailedKey = 'fcm_failed_flag';
@@ -240,7 +241,18 @@ class FcmService with WidgetsBindingObserver {
     }
   }
 
-  Future<void> _syncActiveCallOnResume() async => syncActiveCallState();
+  Future<void> _syncActiveCallOnResume() async {
+    // Sync active call state and update CallProvider
+    await syncActiveCallState();
+
+    // Also check if call status changed (e.g., call ended while paused)
+    try {
+      final callProvider = sl<CallProvider>();
+      await callProvider.syncCallStatusOnResume();
+    } catch (e) {
+      DebugLogger.I.log('[FCM] Failed to sync CallProvider status on resume: $e');
+    }
+  }
 
   Future<void> loadPersistedNotif() async {
     final prefs = await SharedPreferences.getInstance();
