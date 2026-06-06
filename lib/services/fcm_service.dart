@@ -3,14 +3,12 @@ import 'dart:convert';
 
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/widgets.dart';
-import 'package:get_it/get_it.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'api_service.dart';
 import 'debug_logger.dart';
 import 'sse_service.dart';
 import '../di/service_locator.dart';
-import '../providers/call_provider.dart';
 
 const _kNotifHistoryKey = 'fcm_notif_history';
 const _kFcmFailedKey = 'fcm_failed_flag';
@@ -72,6 +70,9 @@ class FcmService with WidgetsBindingObserver {
 
   /// Remote hangup callback (when other side hangs up)
   void Function()? onRemoteHangup;
+
+  /// App resume callback - called when app comes to foreground
+  Future<void> Function()? onAppResume;
 
   bool _fcmFailed = false;
   bool get needsSSEFallback => _fcmFailed;
@@ -243,18 +244,16 @@ class FcmService with WidgetsBindingObserver {
   }
 
   Future<void> _syncActiveCallOnResume() async {
-    // Sync active call state and update CallProvider
+    // Sync active call state (fetch messages)
     await syncActiveCallState();
 
-    // Also check if call status changed (e.g., call ended while paused)
-    // Only sync if CallProvider is registered in GetIt
-    try {
-      if (GetIt.I.isRegistered<CallProvider>()) {
-        final callProvider = sl<CallProvider>();
-        await callProvider.syncCallStatusOnResume();
+    // Call the app resume callback if it's set
+    if (onAppResume != null) {
+      try {
+        await onAppResume!();
+      } catch (e) {
+        DebugLogger.I.log('[FCM] Failed in onAppResume callback: $e');
       }
-    } catch (e) {
-      DebugLogger.I.log('[FCM] Failed to sync CallProvider status on resume: $e');
     }
   }
 

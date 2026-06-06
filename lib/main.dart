@@ -98,6 +98,16 @@ Future<void> main() async {
     }
   };
 
+  // Handle app resume - sync call status
+  FcmService.I.onAppResume = () async {
+    DebugLogger.I.log('[main] App resumed, syncing call status');
+    try {
+      await callProvider.syncCallStatusOnResume();
+    } catch (e) {
+      DebugLogger.I.log('[main] Error syncing call status on resume: $e');
+    }
+  };
+
   // 初始化並取得 FCM token（非同步，不阻擋啟動）
   FcmService.I.initialize().then((token) {
     if (token != null) {
