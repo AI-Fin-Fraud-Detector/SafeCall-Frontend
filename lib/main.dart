@@ -74,10 +74,15 @@ Future<void> main() async {
   FcmService.I.onRemoteHangup = () {
     DebugLogger.I.log('[main] Remote hangup callback triggered');
     try {
-      final callProvider = GetIt.I<CallProvider>();
-      if (callProvider.inCall) {
-        DebugLogger.I.log('[main] Ending call due to remote hangup (NOT sending API)');
-        callProvider.endCallFromRemote();
+      final context = navigatorKey.currentContext;
+      if (context != null) {
+        final callProvider = Provider.of<CallProvider>(context, listen: false);
+        if (callProvider.inCall) {
+          DebugLogger.I.log('[main] Ending call due to remote hangup (NOT sending API)');
+          callProvider.endCallFromRemote();
+        }
+      } else {
+        DebugLogger.I.log('[main] No context available for remote hangup');
       }
     } catch (e) {
       DebugLogger.I.log('[main] Error handling remote hangup: $e');
