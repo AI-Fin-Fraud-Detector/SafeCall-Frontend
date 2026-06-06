@@ -2,6 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import '/models/login_models.dart';
 import '/services/api_service.dart';
+import '/services/debug_logger.dart';
+import '/services/fcm_service.dart';
+import '/services/permissions_service.dart';
 import '/services/secure_storage.dart';
 import '/config/api_config.dart';
 import 'package:get_it/get_it.dart';
@@ -30,17 +33,19 @@ class AuthProvider extends ChangeNotifier {
   String? get phoneNumber => _phoneNumber;
 
   Future<void> init() async {
-    _token = await SecureStorage.readToken();
-    if (_token != null && _token!.isNotEmpty) {
-      sl<ApiService>().setAccessToken(_token);
-      _registerFcmToken();
-    }
+    // Load all auth data FIRST before calling _registerFcmToken
     try {
+      _token = await SecureStorage.readToken();
       _uuid = await SecureStorage.readUuid();
       _name = await SecureStorage.readName();
       _email = await SecureStorage.readEmail();
       _phoneNumber = await SecureStorage.readPhone();
     } catch (_) {}
+
+    if (_token != null && _token!.isNotEmpty) {
+      sl<ApiService>().setAccessToken(_token);
+      _registerFcmToken();
+    }
     notifyListeners();
   }
 
@@ -92,6 +97,11 @@ class AuthProvider extends ChangeNotifier {
         phoneNumber: res.phoneNumber,
       );
 
+      // Request permissions on successful login
+      PermissionsService.I.requestAllPermissions().then((results) {
+        DebugLogger.I.log('[Auth] Permissions on login: $results');
+      });
+
       _registerFcmToken();
 
       return null;
@@ -115,15 +125,56 @@ class AuthProvider extends ChangeNotifier {
 
   bool get isLoggedIn => _token?.isNotEmpty == true;
 
-  /// 取得 FCM token 並向後端註冊
+  /// 取得 FCM token 並向後端註冊，若失敗或返回 null 則使用 SSE fallback
   Future<void> _registerFcmToken() async {
+    DebugLogger.I.log('[Auth] _registerFcmToken() called');
+
+    if (_token == null || _uuid == null) {
+      DebugLogger.I.log('[Auth] Missing token or uuid, skipping FCM registration');
+      return;
+    }
+
+    DebugLogger.I.log('[Auth] Getting FCM token...');
     try {
       final fcmToken = await FirebaseMessaging.instance.getToken();
+      DebugLogger.I.log('[Auth] getToken() returned: ${fcmToken?.substring(0, 20) ?? "null"}...');
+
       if (fcmToken != null && fcmToken.isNotEmpty) {
-        await sl<ApiService>().registerFcmToken(fcmToken);
+        DebugLogger.I.log('[Auth] ✓ Got FCM token: ${fcmToken.substring(0, 20)}...');
+        try {
+          await sl<ApiService>().registerFcmToken(fcmToken);
+          DebugLogger.I.log('[Auth] ✓ FCM token registered successfully');
+          return;
+        } catch (registerError) {
+          DebugLogger.I.log('[Auth] ✗ FCM registration ERROR: $registerError');
+          DebugLogger.I.log('[Auth] → Initializing SSE fallback due to registration failure');
+          await _initializeSSEFallback();
+          return;
+        }
+      } else {
+        DebugLogger.I.log('[Auth] ✗ FCM token is NULL (iOS/simulator)');
+        DebugLogger.I.log('[Auth] → Initializing SSE fallback due to null token');
+        await _initializeSSEFallback();
       }
     } catch (e) {
-      debugPrint('[Auth] FCM token register error: $e');
+      DebugLogger.I.log('[Auth] ✗ FCM getToken() ERROR: $e');
+      DebugLogger.I.log('[Auth] → Initializing SSE fallback due to getToken error');
+      await _initializeSSEFallback();
+    }
+  }
+
+  Future<void> _initializeSSEFallback() async {
+    try {
+      DebugLogger.I.log('[Auth] Starting SSE fallback initialization for userId=$_uuid...');
+      await FcmService.I.initializeSSEFallback(
+        ApiConfig.baseUrl,
+        _uuid!,
+        _token!,
+      );
+      DebugLogger.I.log('[Auth] SSE fallback initialized successfully');
+    } catch (e) {
+      DebugLogger.I.log('[Auth] SSE fallback initialization failed: $e');
+      rethrow;
     }
   }
 }

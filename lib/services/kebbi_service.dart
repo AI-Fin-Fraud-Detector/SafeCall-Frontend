@@ -1,3 +1,4 @@
+import '/services/debug_logger.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 
@@ -52,35 +53,35 @@ class KebbiService {
 
   static Future<void> init() async {
     if (!_isAndroidNative) {
-      debugPrint(
+      DebugLogger.I.log(
           '[Kebbi] init skipped (${kIsWeb ? 'web' : defaultTargetPlatform.name})');
       return;
     }
     try {
       await _ch.invokeMethod<void>('init');
     } on MissingPluginException {
-      debugPrint('[Kebbi] init skipped: channel not registered.');
+      DebugLogger.I.log('[Kebbi] init skipped: channel not registered.');
     } on PlatformException catch (e) {
-      debugPrint('[Kebbi] init error: ${e.code} ${e.message}');
+      DebugLogger.I.log('[Kebbi] init error: ${e.code} ${e.message}');
     } catch (e) {
-      debugPrint('[Kebbi] init error: $e');
+      DebugLogger.I.log('[Kebbi] init error: $e');
     }
   }
 
   static Future<void> startSTT() async {
     if (!_isAndroidNative) {
-      debugPrint('[Kebbi] startSTT skipped (not Android)');
+      DebugLogger.I.log('[Kebbi] startSTT skipped (not Android)');
       return;
     }
     try {
       await _ch.invokeMethod<void>('startSTT');
     } on MissingPluginException {
-      debugPrint('[Kebbi] startSTT skipped: channel not registered.');
+      DebugLogger.I.log('[Kebbi] startSTT skipped: channel not registered.');
     } on PlatformException catch (e) {
-      debugPrint('[Kebbi] startSTT error: ${e.code} ${e.message}');
+      DebugLogger.I.log('[Kebbi] startSTT error: ${e.code} ${e.message}');
       rethrow;
     } catch (e) {
-      debugPrint('[Kebbi] startSTT error: $e');
+      DebugLogger.I.log('[Kebbi] startSTT error: $e');
       rethrow;
     }
   }
@@ -90,11 +91,11 @@ class KebbiService {
     try {
       await _ch.invokeMethod<void>('stopSTT');
     } on MissingPluginException {
-      debugPrint('[Kebbi] stopSTT skipped.');
+      DebugLogger.I.log('[Kebbi] stopSTT skipped.');
     } on PlatformException catch (e) {
-      debugPrint('[Kebbi] stopSTT error: ${e.code} ${e.message}');
+      DebugLogger.I.log('[Kebbi] stopSTT error: ${e.code} ${e.message}');
     } catch (e) {
-      debugPrint('[Kebbi] stopSTT error: $e');
+      DebugLogger.I.log('[Kebbi] stopSTT error: $e');
     }
   }
 
@@ -120,10 +121,10 @@ class KebbiService {
     try {
       await _ch.invokeMethod<void>('initVosk');
     } on PlatformException catch (e) {
-      debugPrint('[Kebbi] initVosk error: ${e.code} ${e.message}');
+      DebugLogger.I.log('[Kebbi] initVosk error: ${e.code} ${e.message}');
       rethrow;
     } catch (e) {
-      debugPrint('[Kebbi] initVosk error: $e');
+      DebugLogger.I.log('[Kebbi] initVosk error: $e');
       rethrow;
     }
   }
@@ -142,10 +143,10 @@ class KebbiService {
     try {
       await _ch.invokeMethod<void>('startVoskSTT');
     } on PlatformException catch (e) {
-      debugPrint('[Kebbi] startVoskSTT error: ${e.code} ${e.message}');
+      DebugLogger.I.log('[Kebbi] startVoskSTT error: ${e.code} ${e.message}');
       rethrow;
     } catch (e) {
-      debugPrint('[Kebbi] startVoskSTT error: $e');
+      DebugLogger.I.log('[Kebbi] startVoskSTT error: $e');
       rethrow;
     }
   }
@@ -155,7 +156,7 @@ class KebbiService {
     try {
       await _ch.invokeMethod<void>('stopVoskSTT');
     } catch (e) {
-      debugPrint('[Kebbi] stopVoskSTT error: $e');
+      DebugLogger.I.log('[Kebbi] stopVoskSTT error: $e');
     }
   }
 
@@ -166,11 +167,11 @@ class KebbiService {
     try {
       await _ch.invokeMethod<void>('fraud');
     } on MissingPluginException {
-      debugPrint('[Kebbi] fraud skipped: channel not registered.');
+      DebugLogger.I.log('[Kebbi] fraud skipped: channel not registered.');
     } on PlatformException catch (e) {
-      debugPrint('[Kebbi] fraud error: ${e.code} ${e.message}');
+      DebugLogger.I.log('[Kebbi] fraud error: ${e.code} ${e.message}');
     } catch (e) {
-      debugPrint('[Kebbi] fraud error: $e');
+      DebugLogger.I.log('[Kebbi] fraud error: $e');
     }
   }
 
@@ -179,11 +180,11 @@ class KebbiService {
     try {
       await _ch.invokeMethod<void>('safe');
     } on MissingPluginException {
-      debugPrint('[Kebbi] safe skipped: channel not registered.');
+      DebugLogger.I.log('[Kebbi] safe skipped: channel not registered.');
     } on PlatformException catch (e) {
-      debugPrint('[Kebbi] safe error: ${e.code} ${e.message}');
+      DebugLogger.I.log('[Kebbi] safe error: ${e.code} ${e.message}');
     } catch (e) {
-      debugPrint('[Kebbi] safe error: $e');
+      DebugLogger.I.log('[Kebbi] safe error: $e');
     }
   }
 
@@ -192,11 +193,11 @@ class KebbiService {
     try {
       await _ch.invokeMethod<void>('release');
     } on MissingPluginException {
-      debugPrint('[Kebbi] release skipped: channel not registered.');
+      DebugLogger.I.log('[Kebbi] release skipped: channel not registered.');
     } on PlatformException catch (e) {
-      debugPrint('[Kebbi] release error: ${e.code} ${e.message}');
+      DebugLogger.I.log('[Kebbi] release error: ${e.code} ${e.message}');
     } catch (e) {
-      debugPrint('[Kebbi] release error: $e');
+      DebugLogger.I.log('[Kebbi] release error: $e');
     }
   }
 }
