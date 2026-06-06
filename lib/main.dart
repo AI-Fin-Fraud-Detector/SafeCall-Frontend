@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
 import 'package:pwa_install/pwa_install.dart';
+import 'package:get_it/get_it.dart';
 
 import 'constants.dart';
 import 'di/service_locator.dart';
