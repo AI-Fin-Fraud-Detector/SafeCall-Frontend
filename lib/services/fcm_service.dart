@@ -162,11 +162,14 @@ class FcmService with WidgetsBindingObserver {
     // Subscribe to SSE events using unified handler (same as FCM)
     DebugLogger.I.log('[FCM] Attaching SSE event listener...');
     SSEService.I.events.listen((event) {
-      DebugLogger.I.log('[SSE] ↓ Event received: ${event['type']}');
+      // Extract nested 'data' field to match FCM structure
+      final eventData = (event['data'] as Map<String, dynamic>?) ?? {};
+      final eventType = eventData['type'] ?? 'unknown';
+      DebugLogger.I.log('[SSE] ↓ Event received: $eventType');
 
       // Create RemoteMessage from SSE event (same format as FCM)
       final remoteMessage = RemoteMessage(
-        data: event,
+        data: eventData,
         notification: RemoteNotification(
           title: event['title'] as String?,
           body: event['body'] as String?,
