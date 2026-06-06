@@ -4,6 +4,7 @@ import '/models/login_models.dart';
 import '/services/api_service.dart';
 import '/services/debug_logger.dart';
 import '/services/fcm_service.dart';
+import '/services/permissions_service.dart';
 import '/services/secure_storage.dart';
 import '/config/api_config.dart';
 import 'package:get_it/get_it.dart';
@@ -95,6 +96,11 @@ class AuthProvider extends ChangeNotifier {
         email: res.email,
         phoneNumber: res.phoneNumber,
       );
+
+      // Request permissions on successful login
+      PermissionsService.I.requestAllPermissions().then((results) {
+        DebugLogger.I.log('[Auth] Permissions on login: $results');
+      });
 
       _registerFcmToken();
 

@@ -11,6 +11,8 @@ import 'providers/call_provider.dart';
 import 'services/debug_logger.dart';
 import 'services/fcm_service.dart';
 import 'services/kebbi_service.dart';
+import 'services/permissions_service.dart';
+import 'services/permissions_service.dart';
 import 'widgets/auth_guard.dart';
 
 import 'pages/welcome_page.dart';
@@ -41,6 +43,14 @@ Future<void> main() async {
 
   KebbiService.init();
   setupServiceLocator();
+
+  // Request required permissions on app startup
+  PermissionsService.I.requestAllPermissions().then((results) {
+    DebugLogger.I.log('[main] Permission on startup: $results');
+  }).catchError((e) {
+    DebugLogger.I.log('[main] Permission request error: $e');
+  });
+
 
   // FCM 初始化 — 收到 incoming_call 時跳轉到 CallPage
   FcmService.I.onIncomingCall = (conversationId, phoneNumber, callerName) {
