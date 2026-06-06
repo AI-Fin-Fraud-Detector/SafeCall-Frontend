@@ -28,15 +28,21 @@ class SSEService {
     required String token,
     required String baseUrl,
   }) async {
+    final msg = '[SSE] connect() called: userId=$userId app=$app';
+    debugPrint(msg);
+    DebugLogger.I.log(msg);
+
     // If already connected to same user/app, reuse connection
     if (_isConnected && _userId == userId && _app == app) {
       debugPrint('[SSE] Already connected to $userId ($app)');
+      DebugLogger.I.log('[SSE] Already connected, reusing...');
       return;
     }
 
     // If connected to different user, disconnect first
     if (_isConnected && (_userId != userId || _app != app)) {
       debugPrint('[SSE] Disconnecting from $_userId ($_app) to connect to $userId ($app)');
+      DebugLogger.I.log('[SSE] Disconnecting previous connection');
       disconnect();
     }
 
@@ -45,6 +51,8 @@ class SSEService {
     _token = token;
     _baseUrl = baseUrl;
 
+    debugPrint('[SSE] Parameters set, calling _connect()...');
+    DebugLogger.I.log('[SSE] Initiating connection...');
     await _connect();
   }
 
@@ -55,7 +63,9 @@ class SSEService {
     final baseUrl = _baseUrl;
 
     if (userId == null || app == null || token == null || baseUrl == null) {
-      debugPrint('[SSE] Missing connection parameters');
+      final msg = '[SSE] Missing params: userId=$userId app=$app token=$token baseUrl=$baseUrl';
+      debugPrint(msg);
+      DebugLogger.I.log(msg);
       return;
     }
 
@@ -68,21 +78,31 @@ class SSEService {
         ..headers['Authorization'] = 'Bearer $token'
         ..headers['X-User-Id'] = userId;
 
+      debugPrint('[SSE] Sending request...');
+      DebugLogger.I.log('[SSE] Sending request with auth headers');
+
       _response = await http.Client().send(request);
+
+      debugPrint('[SSE] Got response: ${_response!.statusCode}');
+      DebugLogger.I.log('[SSE] Got response: statusCode=${_response!.statusCode}');
 
       if (_response!.statusCode == 200) {
         _isConnected = true;
         debugPrint('[SSE] ✓ Connected: $userId ($app)');
-        DebugLogger.I.log('[SSE] ✓ Connected successfully');
+        DebugLogger.I.log('[SSE] ✓ Connected successfully, starting to listen...');
         _listenToStream();
       } else {
         debugPrint('[SSE] ✗ Connection failed: ${_response!.statusCode}');
-        DebugLogger.I.log('[SSE] ✗ HTTP ${_response!.statusCode}');
+        DebugLogger.I.log('[SSE] ✗ HTTP ${_response!.statusCode} - will reconnect in 3s');
+        _isConnected = false;
         _scheduleReconnect();
       }
-    } catch (e) {
-      debugPrint('[SSE] ✗ Connection error: $e');
-      DebugLogger.I.log('[SSE] ✗ Connection error: $e');
+    } catch (e, st) {
+      final msg = '[SSE] ✗ Exception: $e';
+      debugPrint(msg);
+      debugPrint('Stack: $st');
+      DebugLogger.I.log(msg);
+      _isConnected = false;
       _scheduleReconnect();
     }
   }
@@ -131,7 +151,13 @@ class SSEService {
 
   void _scheduleReconnect() {
     _reconnectTimer?.cancel();
-    _reconnectTimer = Timer(_reconnectDelay, _connect);
+    debugPrint('[SSE] Scheduling reconnect in ${_reconnectDelay.inSeconds}s...');
+    DebugLogger.I.log('[SSE] Will retry in ${_reconnectDelay.inSeconds}s');
+    _reconnectTimer = Timer(_reconnectDelay, () {
+      debugPrint('[SSE] Reconnect timer fired, attempting to connect...');
+      DebugLogger.I.log('[SSE] Reconnect timer fired');
+      _connect();
+    });
   }
 
   void disconnect() {
