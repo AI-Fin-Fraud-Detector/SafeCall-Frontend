@@ -3,6 +3,7 @@ import 'dart:convert';
 
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/widgets.dart';
+import 'package:get_it/get_it.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'api_service.dart';
@@ -246,9 +247,12 @@ class FcmService with WidgetsBindingObserver {
     await syncActiveCallState();
 
     // Also check if call status changed (e.g., call ended while paused)
+    // Only sync if CallProvider is registered in GetIt
     try {
-      final callProvider = sl<CallProvider>();
-      await callProvider.syncCallStatusOnResume();
+      if (GetIt.I.isRegistered<CallProvider>()) {
+        final callProvider = sl<CallProvider>();
+        await callProvider.syncCallStatusOnResume();
+      }
     } catch (e) {
       DebugLogger.I.log('[FCM] Failed to sync CallProvider status on resume: $e');
     }
