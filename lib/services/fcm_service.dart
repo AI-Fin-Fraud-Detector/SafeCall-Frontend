@@ -221,7 +221,7 @@ class FcmService with WidgetsBindingObserver {
     }
   }
 
-  Future<void> _syncActiveCallOnResume() async {
+  Future<void> syncActiveCallState() async {
     try {
       final apiService = sl<ApiService>();
       final response = await apiService.dio.get('/api/fraud/active-call');
@@ -239,6 +239,8 @@ class FcmService with WidgetsBindingObserver {
       DebugLogger.I.log('[FCM] Failed to sync active call: $e');
     }
   }
+
+  Future<void> _syncActiveCallOnResume() async => syncActiveCallState();
 
   Future<void> loadPersistedNotif() async {
     final prefs = await SharedPreferences.getInstance();
