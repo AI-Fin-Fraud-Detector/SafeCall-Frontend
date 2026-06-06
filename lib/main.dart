@@ -45,6 +45,11 @@ Future<void> main() async {
   KebbiService.init();
   setupServiceLocator();
 
+  // Initialize CallProvider EARLY so its FCM event listener is attached
+  // before any notifications arrive via SSE/FCM
+  final callProvider = CallProvider();
+  DebugLogger.I.log('[main] CallProvider initialized early for event listener');
+
   // Request required permissions on app startup
   PermissionsService.I.requestAllPermissions().then((results) {
     DebugLogger.I.log('[main] Permission on startup: $results');
@@ -84,12 +89,12 @@ Future<void> main() async {
       DebugLogger.I.log('[main] Context available: ${context != null}');
       if (context != null) {
         final callProvider = Provider.of<CallProvider>(context, listen: false);
-        DebugLogger.I.log('[main] CallProvider inCall: ${callProvider.inCall}');
-        if (callProvider.inCall) {
+        DebugLogger.I.log('[main] CallProvider hasActiveCall: ${callProvider.hasActiveCall}');
+        if (callProvider.hasActiveCall) {
           DebugLogger.I.log('[main] Ending call due to remote hangup (NOT sending API)');
           callProvider.endCallFromRemote();
         } else {
-          DebugLogger.I.log('[main] Not in call, ignoring remote hangup');
+          DebugLogger.I.log('[main] No active call, ignoring remote hangup');
         }
       } else {
         DebugLogger.I.log('[main] No context available for remote hangup');
@@ -114,7 +119,7 @@ Future<void> main() async {
     MultiProvider(
       providers: [
         ChangeNotifierProvider(create: (_) => AuthProvider()..init()),
-        ChangeNotifierProvider(create: (_) => CallProvider()),
+        ChangeNotifierProvider.value(value: callProvider),
       ],
       child: const MyApp(),
     ),
