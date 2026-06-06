@@ -275,6 +275,7 @@ class FcmService with WidgetsBindingObserver {
     if (type.isNotEmpty) {
       final convId = data['conversation_id'] as String? ?? '';
       DebugLogger.I.log('FCM/SSE event: $type${convId.isNotEmpty ? " conv=$convId" : ""}');
+      DebugLogger.I.log('[FCM] Emitting event to CallProvider via stream: $type');
       _eventCtrl.add(Map<String, dynamic>.from(data));
     }
   }

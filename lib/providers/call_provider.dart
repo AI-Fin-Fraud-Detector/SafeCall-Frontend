@@ -219,6 +219,7 @@ class CallProvider extends ChangeNotifier {
 
   void _onFcmEvent(Map<String, dynamic> data) {
     final type = data['type'] as String? ?? '';
+    DebugLogger.I.log('[CallProvider] _onFcmEvent received: type=$type');
 
     switch (type) {
       case 'incoming_call':
@@ -228,6 +229,7 @@ class CallProvider extends ChangeNotifier {
             data['conversation_id'] as String?;
         _callerPhone = detail['phone_number'] as String? ??
             data['phone_number'] as String?;
+        DebugLogger.I.log('[CallProvider] incoming_call set: conversationId=$_conversationId, phone=$_callerPhone, hasActiveCall=$hasActiveCall');
         _callStartAt = DateTime.now();
         _callTicker?.cancel();
         _callTicker = Timer.periodic(const Duration(seconds: 1), (_) {
