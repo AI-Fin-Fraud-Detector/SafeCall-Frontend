@@ -156,8 +156,10 @@ Future<void> _checkActiveCallAndNavigate(
       // Fetch conversation messages to sync with backend
       if (activeConversationId.isNotEmpty) {
         try {
-          await apiService.dio.get('/api/fraud/conversations/$activeConversationId/messages');
-          DebugLogger.I.log('[main] Conversation messages synced');
+          final msgResponse = await apiService.dio.get('/api/fraud/conversations/$activeConversationId/messages');
+          final messages = msgResponse.data as List<dynamic>? ?? [];
+          callProvider.loadConversationHistory(messages);
+          DebugLogger.I.log('[main] Conversation messages synced and loaded');
         } catch (e) {
           DebugLogger.I.log('[main] Failed to fetch messages: $e');
         }
