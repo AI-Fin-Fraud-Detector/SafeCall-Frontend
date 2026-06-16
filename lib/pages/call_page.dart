@@ -140,7 +140,8 @@ class _CallPageState extends State<CallPage> {
       if (_cp.conversationId != null) {
         DebugLogger.I.log('[CallPage] Fetching conversation history for: ${_cp.conversationId}');
         sl<ApiService>().dio.get('/api/fraud/conversations/${_cp.conversationId}/messages').then((response) {
-          final messages = response.data as List<dynamic>? ?? [];
+          final data = response.data as Map<String, dynamic>? ?? {};
+          final messages = data['messages'] as List<dynamic>? ?? [];
           DebugLogger.I.log('[CallPage] Loaded ${messages.length} messages from backend');
           _cp.loadConversationHistory(messages);
         }).catchError((e) {

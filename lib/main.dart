@@ -157,7 +157,8 @@ Future<void> _checkActiveCallAndNavigate(
       if (activeConversationId.isNotEmpty) {
         try {
           final msgResponse = await apiService.dio.get('/api/fraud/conversations/$activeConversationId/messages');
-          final messages = msgResponse.data as List<dynamic>? ?? [];
+          final data = msgResponse.data as Map<String, dynamic>? ?? {};
+          final messages = data['messages'] as List<dynamic>? ?? [];
           callProvider.loadConversationHistory(messages);
           DebugLogger.I.log('[main] Conversation messages synced and loaded');
         } catch (e) {
