@@ -576,9 +576,9 @@ class CallProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// Check call status when app resumes and update UI accordingly
+  /// Load conversation history from API, deduplicating by message ID
+  /// If duplicate found, replace with API version (authoritative)
   void loadConversationHistory(List<dynamic> messages) {
-    _fcmMsgs.clear();
     for (final msg in messages) {
       if (msg is Map<String, dynamic>) {
         final id = msg['id']?.toString() ?? '';
@@ -586,14 +586,29 @@ class CallProvider extends ChangeNotifier {
         final role = msg['role'] as String? ?? 'user';
         final createdAt = msg['created_at'] as String?;
 
-        if (id.isNotEmpty && content.isNotEmpty) {
-          DateTime receivedAt = DateTime.now();
-          if (createdAt != null) {
-            try {
-              receivedAt = DateTime.parse(createdAt);
-            } catch (_) {}
-          }
+        if (id.isEmpty || content.isEmpty) {
+          continue;
+        }
 
+        DateTime receivedAt = DateTime.now();
+        if (createdAt != null) {
+          try {
+            receivedAt = DateTime.parse(createdAt);
+          } catch (_) {}
+        }
+
+        // Check if message already exists
+        final existingIndex = _fcmMsgs.indexWhere((m) => m.id == id);
+        if (existingIndex >= 0) {
+          // Replace with API version (authoritative)
+          _fcmMsgs[existingIndex] = _FcmMsg(
+            id: id,
+            content: content,
+            role: role,
+            receivedAt: receivedAt,
+          );
+        } else {
+          // Add new message
           _fcmMsgs.add(_FcmMsg(
             id: id,
             content: content,
