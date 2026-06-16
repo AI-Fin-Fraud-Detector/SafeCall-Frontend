@@ -589,6 +589,19 @@ class CallProvider extends ChangeNotifier {
         _endCall();
         _clearFcmCall();
         notifyListeners();
+      } else if (hasActiveCall && _conversationId == null) {
+        // Backend has an active call but CallProvider doesn't know about it
+        // This happens when app was paused and call came in
+        final activeConvId = data['conversation_id'] as String?;
+        if (activeConvId?.isNotEmpty == true) {
+          DebugLogger.I.log('[CallProvider] Found active call from backend: $activeConvId');
+          _conversationId = activeConvId;
+          _hasActiveCall = true;
+          // Update caller info from backend
+          _callerPhone = data['phone_number'] as String?;
+          _callerName = data['caller_name'] as String?;
+          notifyListeners();
+        }
       } else if (hasActiveCall && _conversationId != null) {
         // Still in a call - verify it's the same conversation
         final activeConvId = data['conversation_id'] as String?;
