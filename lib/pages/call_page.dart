@@ -134,6 +134,11 @@ class _CallPageState extends State<CallPage> {
         _audio.playBytes(bytes);
       });
       _cp.addListener(_onProviderUpdate);
+
+      // Sync conversation messages on page load
+      if (_cp.conversationId != null) {
+        sl<ApiService>().dio.get('/api/fraud/conversations/${_cp.conversationId}/messages').catchError((_) {});
+      }
     }
   }
 
