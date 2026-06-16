@@ -81,6 +81,9 @@ class _CallPageState extends State<CallPage> {
   // Top banner state
   bool _showSpeakerBanner = false;
 
+  // Message tracking for auto-scroll
+  int _lastMessageCount = 0;
+
   // Incoming: tracks when the user takes over from the system
   bool _userAnswered = false;
   bool _isHangingUp = false; // 防止 hasActiveCall 變 false 時的 auto-pop 把 CallSummaryPage 彈掉
@@ -148,6 +151,13 @@ class _CallPageState extends State<CallPage> {
     if (newScore != _lastRealScore) {
       _lastRealScore = newScore;
       setState(() => _updateScore(newScore));
+    }
+
+    // Auto-scroll to latest message when messages change
+    final messageCount = _cp.fcmTranscript.length;
+    if (messageCount != _lastMessageCount) {
+      _scrollToBottom();
+      _lastMessageCount = messageCount;
     }
   }
 
@@ -692,10 +702,11 @@ class _CallPageState extends State<CallPage> {
               ? _buildEmptyTranscript()
               : ListView.builder(
                   controller: _scroll,
+                  reverse: true,
                   padding:
                       const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
                   itemCount: entries.length,
-                  itemBuilder: (_, i) => _buildBubble(entries[i]),
+                  itemBuilder: (_, i) => _buildBubble(entries[entries.length - 1 - i]),
                 ),
         ),
         if (isTranscribing) _buildTranscribingIndicator(),
