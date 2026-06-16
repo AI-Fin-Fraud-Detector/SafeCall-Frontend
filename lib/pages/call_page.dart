@@ -374,7 +374,11 @@ class _CallPageState extends State<CallPage> {
     final int durSecs = _isMock ? _durationSecs : cp.callDuration.inSeconds;
     final String caller = _isMock
         ? (widget.callerNumber ?? (_isOutgoing ? '0912-345-678' : '0800-123-456'))
-        : (widget.callerNumber ?? cp.callerPhone ?? cp.callId ?? 'Unknown');
+        : (widget.callerNumber?.isNotEmpty == true
+            ? widget.callerNumber!
+            : (cp.callerPhone?.isNotEmpty == true
+                ? cp.callerPhone!
+                : (cp.callId ?? 'Private Number')));
     final List<TranscriptEntry> transcript = _isMock
         ? _mockTranscript
         : cp.fcmTranscript.isNotEmpty
