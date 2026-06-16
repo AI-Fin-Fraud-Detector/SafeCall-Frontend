@@ -577,6 +577,35 @@ class CallProvider extends ChangeNotifier {
   }
 
   /// Check call status when app resumes and update UI accordingly
+  void loadConversationHistory(List<dynamic> messages) {
+    _fcmMsgs.clear();
+    for (final msg in messages) {
+      if (msg is Map<String, dynamic>) {
+        final id = msg['id']?.toString() ?? '';
+        final content = msg['content'] as String? ?? '';
+        final role = msg['role'] as String? ?? 'user';
+        final createdAt = msg['created_at'] as String?;
+
+        if (id.isNotEmpty && content.isNotEmpty) {
+          DateTime receivedAt = DateTime.now();
+          if (createdAt != null) {
+            try {
+              receivedAt = DateTime.parse(createdAt);
+            } catch (_) {}
+          }
+
+          _fcmMsgs.add(_FcmMsg(
+            id: id,
+            content: content,
+            role: role,
+            receivedAt: receivedAt,
+          ));
+        }
+      }
+    }
+    notifyListeners();
+  }
+
   Future<void> syncCallStatusOnResume() async {
     try {
       final apiService = sl<ApiService>();

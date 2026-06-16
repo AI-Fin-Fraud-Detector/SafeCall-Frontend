@@ -137,7 +137,10 @@ class _CallPageState extends State<CallPage> {
 
       // Sync conversation messages on page load
       if (_cp.conversationId != null) {
-        sl<ApiService>().dio.get('/api/fraud/conversations/${_cp.conversationId}/messages').catchError((_) {});
+        sl<ApiService>().dio.get('/api/fraud/conversations/${_cp.conversationId}/messages').then((response) {
+          final messages = response.data as List<dynamic>? ?? [];
+          _cp.loadConversationHistory(messages);
+        }).catchError((_) {});
       }
     }
   }
