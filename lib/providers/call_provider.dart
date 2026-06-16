@@ -91,6 +91,9 @@ class CallProvider extends ChangeNotifier {
   String? _callerPhone;
   String? get callerPhone => _callerPhone;
 
+  String? _callerName;
+  String? get callerName => _callerName;
+
   final List<_FcmMsg> _fcmMsgs = [];
   List<TranscriptEntry> get fcmTranscript => _fcmMsgs.map((m) => TranscriptEntry(
         speaker:
@@ -544,6 +547,7 @@ class CallProvider extends ChangeNotifier {
   void _clearFcmCall() {
     _conversationId = null;
     _callerPhone = null;
+    _callerName = null;
     _fcmMsgs.clear();
     _scamProbability = 0.0;
     _ssciData = null;
@@ -596,10 +600,25 @@ class CallProvider extends ChangeNotifier {
         if (activeConvId?.isNotEmpty == true) {
           DebugLogger.I.log('[CallProvider] Found active call from backend: $activeConvId');
           _conversationId = activeConvId;
-          _hasActiveCall = true;
-          // Update caller info from backend
           _callerPhone = data['phone_number'] as String?;
           _callerName = data['caller_name'] as String?;
+
+          // Parse call start time if available
+          final callStartTimeStr = data['call_start_time'] as String?;
+          if (callStartTimeStr?.isNotEmpty == true) {
+            try {
+              _callStartAt = DateTime.parse(callStartTimeStr!);
+            } catch (_) {
+              _callStartAt = DateTime.now();
+            }
+          } else {
+            _callStartAt = DateTime.now();
+          }
+
+          // Sync fraud score
+          final currentScore = data['current_score'] as int? ?? 0;
+          _scamProbability = currentScore / 100.0;
+
           notifyListeners();
         }
       } else if (hasActiveCall && _conversationId != null) {
