@@ -9,6 +9,7 @@ import 'api_service.dart';
 import 'debug_logger.dart';
 import 'sse_service.dart';
 import '../di/service_locator.dart';
+import '../providers/call_provider.dart';
 
 const _kNotifHistoryKey = 'fcm_notif_history';
 const _kFcmFailedKey = 'fcm_failed_flag';
@@ -234,8 +235,13 @@ class FcmService with WidgetsBindingObserver {
         final conversationId = data['conversation_id'] as String?;
         if (conversationId?.isNotEmpty == true) {
           DebugLogger.I.log('[FCM] Syncing messages for active call: $conversationId');
-          await apiService.dio.get('/api/fraud/conversations/$conversationId/messages');
+          final msgResponse = await apiService.dio.get('/api/fraud/conversations/$conversationId/messages');
           DebugLogger.I.log('[FCM] Messages synced successfully');
+
+          // Load conversation history into CallProvider
+          final messages = msgResponse.data as List<dynamic>? ?? [];
+          final callProvider = sl<CallProvider>();
+          callProvider.loadConversationHistory(messages);
         }
       }
     } catch (e) {
