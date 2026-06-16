@@ -13,6 +13,7 @@ import '../models/conversation_models.dart';
 import '../providers/call_provider.dart';
 import '../services/api_service.dart';
 import '../services/audio_service.dart';
+import '../services/debug_logger.dart';
 import 'call_summary_page.dart';
 import 'conversations_page.dart';
 
@@ -137,10 +138,16 @@ class _CallPageState extends State<CallPage> {
 
       // Sync conversation messages on page load
       if (_cp.conversationId != null) {
+        DebugLogger.I.log('[CallPage] Fetching conversation history for: ${_cp.conversationId}');
         sl<ApiService>().dio.get('/api/fraud/conversations/${_cp.conversationId}/messages').then((response) {
           final messages = response.data as List<dynamic>? ?? [];
+          DebugLogger.I.log('[CallPage] Loaded ${messages.length} messages from backend');
           _cp.loadConversationHistory(messages);
-        }).catchError((_) {});
+        }).catchError((e) {
+          DebugLogger.I.log('[CallPage] Failed to fetch conversation: $e');
+        });
+      } else {
+        DebugLogger.I.log('[CallPage] No conversationId available yet');
       }
     }
   }
