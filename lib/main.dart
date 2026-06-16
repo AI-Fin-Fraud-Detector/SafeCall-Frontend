@@ -9,6 +9,7 @@ import 'constants.dart';
 import 'di/service_locator.dart';
 import 'providers/auth_provider.dart';
 import 'providers/call_provider.dart';
+import 'services/api_service.dart';
 import 'services/debug_logger.dart';
 import 'services/fcm_service.dart';
 import 'services/kebbi_service.dart';
@@ -30,6 +31,9 @@ import 'pages/conversations_page.dart';
 /// 全域 NavigatorKey — 供 FcmService 在 widget tree 外部導航使用
 final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
 
+/// 全域 CallProvider — 供 notification handler 使用
+late CallProvider callProvider;
+
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
@@ -45,6 +49,11 @@ Future<void> main() async {
   KebbiService.init();
   setupServiceLocator();
 
+  // Initialize CallProvider EARLY so its FCM event listener is attached
+  // before any notifications arrive via SSE/FCM
+  callProvider = CallProvider();
+  DebugLogger.I.log('[main] CallProvider initialized early for event listener');
+
   // Request required permissions on app startup
   PermissionsService.I.requestAllPermissions().then((results) {
     DebugLogger.I.log('[main] Permission on startup: $results');
@@ -53,27 +62,17 @@ Future<void> main() async {
   });
 
 
-  // FCM 初始化 — 收到 incoming_call 時跳轉到 CallPage
+  // 用戶點擊通知時 (cases 2 & 3: tap notification while backgrounded or foreground)
   FcmService.I.onIncomingCall = (conversationId, phoneNumber, callerName) {
-    DebugLogger.I.log('[main] onIncomingCall triggered: $phoneNumber ($callerName)');
+    DebugLogger.I.log('[main] Incoming call notification tapped: $phoneNumber ($callerName)');
     final nav = navigatorKey.currentState;
-    DebugLogger.I.log('[main] Navigator available: ${nav != null}');
     if (nav == null) {
       DebugLogger.I.log('[main] Cannot navigate - navigator is null');
       return;
     }
 
-    DebugLogger.I.log('[main] Navigating to CallPage');
-    nav.pushAndRemoveUntil(
-      MaterialPageRoute(
-        builder: (_) => CallPage(
-          mode: CallMode.incoming,
-          contactName: callerName,
-          callerNumber: phoneNumber.isNotEmpty ? phoneNumber : null,
-        ),
-      ),
-      (route) => route.isFirst,
-    );
+    // Check backend for active call to decide where to navigate
+    _checkActiveCallAndNavigate(nav, conversationId, phoneNumber, callerName);
   };
 
   // Handle remote hangup (when other side ends call)
@@ -84,18 +83,28 @@ Future<void> main() async {
       DebugLogger.I.log('[main] Context available: ${context != null}');
       if (context != null) {
         final callProvider = Provider.of<CallProvider>(context, listen: false);
-        DebugLogger.I.log('[main] CallProvider inCall: ${callProvider.inCall}');
-        if (callProvider.inCall) {
+        DebugLogger.I.log('[main] CallProvider hasActiveCall: ${callProvider.hasActiveCall}');
+        if (callProvider.hasActiveCall) {
           DebugLogger.I.log('[main] Ending call due to remote hangup (NOT sending API)');
           callProvider.endCallFromRemote();
         } else {
-          DebugLogger.I.log('[main] Not in call, ignoring remote hangup');
+          DebugLogger.I.log('[main] No active call, ignoring remote hangup');
         }
       } else {
         DebugLogger.I.log('[main] No context available for remote hangup');
       }
     } catch (e) {
       DebugLogger.I.log('[main] Error handling remote hangup: $e');
+    }
+  };
+
+  // Handle app resume - sync call status
+  FcmService.I.onAppResume = () async {
+    DebugLogger.I.log('[main] App resumed, syncing call status');
+    try {
+      await callProvider.syncCallStatusOnResume();
+    } catch (e) {
+      DebugLogger.I.log('[main] Error syncing call status on resume: $e');
     }
   };
 
@@ -110,11 +119,97 @@ Future<void> main() async {
     DebugLogger.I.log('[main] FCM initialization error: $e');
   });
 
+  _runApp();
+}
+
+/// Check if user has active call, navigate accordingly
+Future<void> _checkActiveCallAndNavigate(
+  NavigatorState nav,
+  String conversationId,
+  String phoneNumber,
+  String? callerName,
+) async {
+  try {
+    final apiService = GetIt.I<ApiService>();
+    final dioResponse = await apiService.dio.get('/api/fraud/active-call');
+    final response = dioResponse.data as Map<String, dynamic>;
+
+    final hasActiveCall = response['has_active_call'] as bool? ?? false;
+    DebugLogger.I.log('[main] Backend active call check: $hasActiveCall');
+
+    if (hasActiveCall) {
+      final activeConversationId = response['conversation_id'] as String? ?? '';
+      final activePhoneNumber = response['phone_number'] as String? ?? '';
+      final activeCallerName = response['caller_name'] as String?;
+
+      // Check if the active call is the same as the notification conversation
+      if (activeConversationId == conversationId) {
+        // Same call - this is the incoming call we just tapped
+        DebugLogger.I.log('[main] Showing tapped incoming call: $conversationId');
+      } else {
+        // Different call - user is already in another call, switch to it
+        DebugLogger.I.log('[main] User in different call, switching from $conversationId to $activeConversationId');
+        phoneNumber = activePhoneNumber;
+        callerName = activeCallerName;
+      }
+
+      // Fetch conversation messages to sync with backend
+      if (activeConversationId.isNotEmpty) {
+        try {
+          await apiService.dio.get('/api/fraud/conversations/$activeConversationId/messages');
+          DebugLogger.I.log('[main] Conversation messages synced');
+        } catch (e) {
+          DebugLogger.I.log('[main] Failed to fetch messages: $e');
+        }
+      }
+
+      DebugLogger.I.log('[main] Navigating to call');
+      nav.pushAndRemoveUntil(
+        MaterialPageRoute(
+          builder: (_) => CallPage(
+            mode: CallMode.incoming,
+            contactName: callerName,
+            callerNumber: phoneNumber.isNotEmpty ? phoneNumber : null,
+          ),
+        ),
+        (route) => route.isFirst,
+      );
+    } else {
+      // No active call - verify the incoming call still exists and navigate to it
+      DebugLogger.I.log('[main] No active call, showing incoming call: $conversationId');
+      nav.pushAndRemoveUntil(
+        MaterialPageRoute(
+          builder: (_) => CallPage(
+            mode: CallMode.incoming,
+            contactName: callerName,
+            callerNumber: phoneNumber.isNotEmpty ? phoneNumber : null,
+          ),
+        ),
+        (route) => route.isFirst,
+      );
+    }
+  } catch (e) {
+    DebugLogger.I.log('[main] Error checking active call: $e');
+    // Fallback: show incoming call screen from notification
+    nav.pushAndRemoveUntil(
+      MaterialPageRoute(
+        builder: (_) => CallPage(
+          mode: CallMode.incoming,
+          contactName: callerName,
+          callerNumber: phoneNumber.isNotEmpty ? phoneNumber : null,
+        ),
+      ),
+      (route) => route.isFirst,
+    );
+  }
+}
+
+void _runApp() {
   runApp(
     MultiProvider(
       providers: [
         ChangeNotifierProvider(create: (_) => AuthProvider()..init()),
-        ChangeNotifierProvider(create: (_) => CallProvider()),
+        ChangeNotifierProvider.value(value: callProvider),
       ],
       child: const MyApp(),
     ),

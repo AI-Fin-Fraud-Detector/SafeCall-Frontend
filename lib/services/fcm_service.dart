@@ -5,8 +5,10 @@ import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/widgets.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'api_service.dart';
 import 'debug_logger.dart';
 import 'sse_service.dart';
+import '../di/service_locator.dart';
 
 const _kNotifHistoryKey = 'fcm_notif_history';
 const _kFcmFailedKey = 'fcm_failed_flag';
@@ -68,6 +70,9 @@ class FcmService with WidgetsBindingObserver {
 
   /// Remote hangup callback (when other side hangs up)
   void Function()? onRemoteHangup;
+
+  /// App resume callback - called when app comes to foreground
+  Future<void> Function()? onAppResume;
 
   bool _fcmFailed = false;
   bool get needsSSEFallback => _fcmFailed;
@@ -206,6 +211,9 @@ class FcmService with WidgetsBindingObserver {
       DebugLogger.I.log('[FCM] App resumed, checking notification state...');
       loadPersistedNotif();
 
+      // Sync active call and messages when app resumes
+      _syncActiveCallOnResume();
+
       // If using SSE fallback, verify connection is still alive
       if (_fcmFailed) {
         DebugLogger.I.log('[FCM] App resumed - SSE fallback is active');
@@ -213,6 +221,39 @@ class FcmService with WidgetsBindingObserver {
       }
     } else if (state == AppLifecycleState.paused) {
       DebugLogger.I.log('[FCM] App paused');
+    }
+  }
+
+  Future<void> syncActiveCallState() async {
+    try {
+      final apiService = sl<ApiService>();
+      final response = await apiService.dio.get('/api/fraud/active-call');
+      final data = response.data as Map<String, dynamic>;
+
+      if (data['has_active_call'] == true) {
+        final conversationId = data['conversation_id'] as String?;
+        if (conversationId?.isNotEmpty == true) {
+          DebugLogger.I.log('[FCM] Syncing messages for active call: $conversationId');
+          await apiService.dio.get('/api/fraud/conversations/$conversationId/messages');
+          DebugLogger.I.log('[FCM] Messages synced successfully');
+        }
+      }
+    } catch (e) {
+      DebugLogger.I.log('[FCM] Failed to sync active call: $e');
+    }
+  }
+
+  Future<void> _syncActiveCallOnResume() async {
+    // Sync active call state (fetch messages)
+    await syncActiveCallState();
+
+    // Call the app resume callback if it's set
+    if (onAppResume != null) {
+      try {
+        await onAppResume!();
+      } catch (e) {
+        DebugLogger.I.log('[FCM] Failed in onAppResume callback: $e');
+      }
     }
   }
 
@@ -275,6 +316,7 @@ class FcmService with WidgetsBindingObserver {
     if (type.isNotEmpty) {
       final convId = data['conversation_id'] as String? ?? '';
       DebugLogger.I.log('FCM/SSE event: $type${convId.isNotEmpty ? " conv=$convId" : ""}');
+      DebugLogger.I.log('[FCM] Emitting event to CallProvider via stream: $type');
       _eventCtrl.add(Map<String, dynamic>.from(data));
     }
   }

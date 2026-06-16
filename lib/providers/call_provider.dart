@@ -219,6 +219,7 @@ class CallProvider extends ChangeNotifier {
 
   void _onFcmEvent(Map<String, dynamic> data) {
     final type = data['type'] as String? ?? '';
+    DebugLogger.I.log('[CallProvider] _onFcmEvent received: type=$type');
 
     switch (type) {
       case 'incoming_call':
@@ -228,6 +229,7 @@ class CallProvider extends ChangeNotifier {
             data['conversation_id'] as String?;
         _callerPhone = detail['phone_number'] as String? ??
             data['phone_number'] as String?;
+        DebugLogger.I.log('[CallProvider] incoming_call set: conversationId=$_conversationId, phone=$_callerPhone, hasActiveCall=$hasActiveCall');
         _callStartAt = DateTime.now();
         _callTicker?.cancel();
         _callTicker = Timer.periodic(const Duration(seconds: 1), (_) {
@@ -568,6 +570,38 @@ class CallProvider extends ChangeNotifier {
     _endCall();
     _clearFcmCall();
     notifyListeners();
+  }
+
+  /// Check call status when app resumes and update UI accordingly
+  Future<void> syncCallStatusOnResume() async {
+    try {
+      final apiService = sl<ApiService>();
+      final response = await apiService.dio.get('/api/fraud/active-call');
+      final data = response.data as Map<String, dynamic>;
+      final hasActiveCall = data['has_active_call'] as bool? ?? false;
+
+      DebugLogger.I.log('[CallProvider] syncCallStatusOnResume: hasActiveCall=$hasActiveCall, _conversationId=$_conversationId');
+
+      if (!hasActiveCall && _conversationId != null) {
+        // We thought there was a call, but backend says no active call
+        // Call ended while app was paused - end the call
+        DebugLogger.I.log('[CallProvider] Call ended while app was paused, clearing state');
+        _endCall();
+        _clearFcmCall();
+        notifyListeners();
+      } else if (hasActiveCall && _conversationId != null) {
+        // Still in a call - verify it's the same conversation
+        final activeConvId = data['conversation_id'] as String?;
+        if (activeConvId != _conversationId) {
+          // Different conversation - unlikely but handle it
+          DebugLogger.I.log('[CallProvider] Conversation changed while paused: $_conversationId -> $activeConvId');
+          _conversationId = activeConvId;
+          notifyListeners();
+        }
+      }
+    } catch (e) {
+      DebugLogger.I.log('[CallProvider] Error syncing call status on resume: $e');
+    }
   }
 
   // ── Mic streaming ──

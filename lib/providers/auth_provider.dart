@@ -44,7 +44,15 @@ class AuthProvider extends ChangeNotifier {
 
     if (_token != null && _token!.isNotEmpty) {
       sl<ApiService>().setAccessToken(_token);
-      _registerFcmToken();
+      await _registerFcmToken();
+
+      // Sync active call status on app startup (cold start)
+      try {
+        await FcmService.I.syncActiveCallState();
+        DebugLogger.I.log('[Auth] Synced active call state on startup');
+      } catch (e) {
+        DebugLogger.I.log('[Auth] Failed to sync active call on startup: $e');
+      }
     }
     notifyListeners();
   }
@@ -102,7 +110,15 @@ class AuthProvider extends ChangeNotifier {
         DebugLogger.I.log('[Auth] Permissions on login: $results');
       });
 
-      _registerFcmToken();
+      await _registerFcmToken();
+
+      // Sync active call status after login
+      try {
+        await FcmService.I.syncActiveCallState();
+        DebugLogger.I.log('[Auth] Synced active call state after login');
+      } catch (e) {
+        DebugLogger.I.log('[Auth] Failed to sync active call after login: $e');
+      }
 
       return null;
     } catch (e) {
