@@ -321,7 +321,7 @@ class _CallPageState extends State<CallPage> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (_scroll.hasClients) {
         _scroll.animateTo(
-          _scroll.position.maxScrollExtent,
+          0,  // Position 0 = visual bottom with reversed ListView
           duration: const Duration(milliseconds: 300),
           curve: Curves.easeOut,
         );
