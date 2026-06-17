@@ -12,7 +12,6 @@ import '../models/call_transcript.dart';
 import '../models/conversation_models.dart';
 import '../providers/call_provider.dart';
 import '../services/api_service.dart';
-import '../services/audio_service.dart';
 import '../services/debug_logger.dart';
 import 'call_summary_page.dart';
 import 'conversations_page.dart';
@@ -71,16 +70,10 @@ class _CallPageState extends State<CallPage> {
   int _mockScore = 0;
   int _maxScore = 0; // highest score seen — used in summary
   int _lastRealScore = 0; // tracks last seen score in real mode
-  bool _isTranscribing = false;
   bool _isScoreStale = false;
 
-  // Duration & speaker indicator
+  // Duration
   int _durationSecs = 0;
-  bool _speakerOn = true;
-  int _dotPhase = 0;
-
-  // Top banner state
-  bool _showSpeakerBanner = false;
 
   // Message tracking for auto-scroll
   int _lastMessageCount = 0;
@@ -95,14 +88,9 @@ class _CallPageState extends State<CallPage> {
   // Timers
   final List<Timer> _mockTimers = [];
   Timer? _tickTimer;
-  Timer? _dotTimer;
-  Timer? _bannerTimer;
-  Timer? _bannerDismissTimer;
 
-  // Audio (real mode)
-  StreamSubscription<Uint8List>? _audioSub;
+  // Call provider
   late final CallProvider _cp;
-  final _audio = AudioService.I;
 
   // Scroll
   final _scroll = ScrollController();
@@ -116,24 +104,9 @@ class _CallPageState extends State<CallPage> {
       if (mounted) setState(() => _durationSecs++);
     });
 
-    _dotTimer = Timer.periodic(const Duration(milliseconds: 450), (_) {
-      if (mounted) setState(() => _dotPhase = (_dotPhase + 1) % 3);
-    });
-
-    // One-time speakerphone banner at top of screen
-    _bannerTimer = Timer(const Duration(milliseconds: 700), () {
-      if (mounted) setState(() => _showSpeakerBanner = true);
-    });
-    _bannerDismissTimer = Timer(const Duration(milliseconds: 3800), () {
-      if (mounted) setState(() => _showSpeakerBanner = false);
-    });
-
     if (_isMock) {
       _isOutgoing ? _launchOutgoingMock() : _launchMock();
     } else {
-      _audioSub = _cp.audioFrames.listen((bytes) {
-        _audio.playBytes(bytes);
-      });
       _cp.addListener(_onProviderUpdate);
 
       // Sync conversation messages on page load
@@ -196,28 +169,22 @@ class _CallPageState extends State<CallPage> {
       );
 
   void _launchMock() {
-    setState(() => _isTranscribing = true);
-
     _addTimer(2000, () {
       setState(() {
         _updateScore(18);
         _mockTranscript.add(_entry(TranscriptSpeaker.caller, '您好，我是台灣大哥大客服。'));
-        _isTranscribing = false;
         _isScoreStale = false;
       });
       _scrollToBottom();
     });
-    _addTimer(2400, () => setState(() => _isTranscribing = true));
 
     _addTimer(4000, () {
       setState(() {
         _mockTranscript.add(_entry(TranscriptSpeaker.ai, '您好，請問有什麼需要協助？'));
-        _isTranscribing = false;
       });
       _scrollToBottom();
     });
     _addTimer(4400, () => setState(() {
-      _isTranscribing = true;
       _isScoreStale = true;
     }));
 
@@ -225,37 +192,31 @@ class _CallPageState extends State<CallPage> {
       setState(() {
         _updateScore(22);
         _mockTranscript.add(_entry(TranscriptSpeaker.caller, '做用戶滿意度調查，大概三分鐘。'));
-        _isTranscribing = false;
         _isScoreStale = false;
       });
       _scrollToBottom();
     });
-    _addTimer(7400, () => setState(() => _isTranscribing = true));
     _addTimer(9200, () => setState(() => _isScoreStale = true));
 
     _addTimer(11000, () {
       setState(() {
         _updateScore(75);
         _mockTranscript.add(_entry(TranscriptSpeaker.caller, '需要您配合轉帳到安全帳戶。'));
-        _isTranscribing = false;
         _isScoreStale = false;
       });
       _scrollToBottom();
     });
     _addTimer(11400, () => setState(() {
-      _isTranscribing = true;
       _isScoreStale = true;
     }));
 
     _addTimer(13000, () {
       setState(() {
         _mockTranscript.add(_entry(TranscriptSpeaker.ai, '請提供您的聯絡資訊。'));
-        _isTranscribing = false;
       });
       _scrollToBottom();
     });
     _addTimer(13400, () => setState(() {
-      _isTranscribing = true;
       _isScoreStale = true;
     }));
 
@@ -267,7 +228,6 @@ class _CallPageState extends State<CallPage> {
           '緊急情況，帳戶將被凍結。',
           isHighRisk: true,
         ));
-        _isTranscribing = false;
         _isScoreStale = false;
       });
       _scrollToBottom();
@@ -275,30 +235,24 @@ class _CallPageState extends State<CallPage> {
   }
 
   void _launchOutgoingMock() {
-    setState(() => _isTranscribing = true);
-
     _addTimer(2000, () {
       setState(() {
         _updateScore(15);
         _mockTranscript.add(_entry(TranscriptSpeaker.caller, '喂，你好，我是中華電信客服。'));
-        _isTranscribing = false;
         _isScoreStale = false;
       });
       _scrollToBottom();
     });
-    _addTimer(2400, () => setState(() => _isTranscribing = true));
 
     _addTimer(5000, () {
       setState(() {
         _updateScore(20);
         _mockTranscript.add(_entry(TranscriptSpeaker.caller, '您的帳號有異常登入紀錄，需要確認。'));
-        _isTranscribing = false;
         _isScoreStale = false;
       });
       _scrollToBottom();
     });
     _addTimer(5400, () => setState(() {
-      _isTranscribing = true;
       _isScoreStale = true;
     }));
 
@@ -306,13 +260,11 @@ class _CallPageState extends State<CallPage> {
       setState(() {
         _updateScore(68);
         _mockTranscript.add(_entry(TranscriptSpeaker.caller, '請告訴我您的身分證字號與銀行帳號。'));
-        _isTranscribing = false;
         _isScoreStale = false;
       });
       _scrollToBottom();
     });
     _addTimer(8400, () => setState(() {
-      _isTranscribing = true;
       _isScoreStale = true;
     }));
 
@@ -324,7 +276,6 @@ class _CallPageState extends State<CallPage> {
           '否則帳號將在 30 分鐘內被停用。',
           isHighRisk: true,
         ));
-        _isTranscribing = false;
         _isScoreStale = false;
       });
       _scrollToBottom();
@@ -348,18 +299,12 @@ class _CallPageState extends State<CallPage> {
   @override
   void dispose() {
     _tickTimer?.cancel();
-    _dotTimer?.cancel();
-    _bannerTimer?.cancel();
-    _bannerDismissTimer?.cancel();
     for (final t in _mockTimers) {
       t.cancel();
     }
-    _audioSub?.cancel();
-    _audio.stopPlay();
     _scroll.dispose();
     if (!_isMock) {
       _cp.removeListener(_onProviderUpdate);
-      unawaited(_cp.stopMicStream());
     }
     super.dispose();
   }
@@ -395,20 +340,9 @@ class _CallPageState extends State<CallPage> {
             : (cp.callerPhone?.isNotEmpty == true
                 ? cp.callerPhone!
                 : (cp.callId ?? 'Private Number')));
-    final List<TranscriptEntry> transcript = _isMock
-        ? _mockTranscript
-        : cp.fcmTranscript.isNotEmpty
-            ? cp.fcmTranscript
-            : cp.history.reversed
-                .map((e) => TranscriptEntry(
-                      speaker: TranscriptSpeaker.caller,
-                      text: e.transcript,
-                      time: e.time,
-                      isHighRisk: (e.stage ?? 0) >= 3,
-                    ))
-                .toList();
+    final List<TranscriptEntry> transcript =
+        _isMock ? _mockTranscript : cp.fcmTranscript;
 
-    final bool isTranscribing = _isMock ? _isTranscribing : cp.streaming;
     final bool isScoreStale = _isMock ? _isScoreStale : false;
 
     final bool hasScore = score > 0;
@@ -420,19 +354,16 @@ class _CallPageState extends State<CallPage> {
         child: Column(
           children: [
             _buildPills(),
-            _buildSpeakerBanner(),
             _buildHeader(caller, durSecs),
             _buildRiskBlock(score, hasScore, isScoreStale),
             const SizedBox(height: 6),
             Expanded(
-              child: _buildTranscriptSection(transcript, isTranscribing),
+              child: _buildTranscriptSection(transcript),
             ),
             if (!_isMock && cp.isSafeToAnswer && !isHighRisk) _buildSafeToAnswerBanner(),
             if (isHighRisk) _buildWarning(),
             const SizedBox(height: 12),
             _buildButtons(isHighRisk, _isOutgoing),
-            const SizedBox(height: 10),
-            _buildSpeaker(),
             const SizedBox(height: 20),
           ],
         ),
@@ -441,44 +372,6 @@ class _CallPageState extends State<CallPage> {
   }
 
   // ── Section builders ──────────────────────────────────────────────────────────
-
-  Widget _buildSpeakerBanner() {
-    return AnimatedSize(
-      duration: const Duration(milliseconds: 380),
-      curve: Curves.easeOut,
-      child: _showSpeakerBanner
-          ? Center(
-              child: Container(
-                margin: const EdgeInsets.fromLTRB(16, 4, 16, 0),
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 16, vertical: 9),
-                decoration: BoxDecoration(
-                  color: Colors.white.withValues(alpha: 0.13),
-                  borderRadius: BorderRadius.circular(20),
-                  border: Border.all(
-                      color: Colors.white.withValues(alpha: 0.28)),
-                ),
-                child: const Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Icon(Icons.volume_up_rounded,
-                        color: Colors.white, size: 18),
-                    SizedBox(width: 8),
-                    Text(
-                      'Speaker automatically enabled',
-                      style: TextStyle(
-                        color: Colors.white,
-                        fontSize: 14,
-                        fontWeight: FontWeight.w500,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            )
-          : const SizedBox.shrink(),
-    );
-  }
 
   Widget _buildPills() {
     return Padding(
@@ -713,8 +606,7 @@ class _CallPageState extends State<CallPage> {
     );
   }
 
-  Widget _buildTranscriptSection(
-      List<TranscriptEntry> entries, bool isTranscribing) {
+  Widget _buildTranscriptSection(List<TranscriptEntry> entries) {
     return Column(
       children: [
         Expanded(
@@ -729,7 +621,6 @@ class _CallPageState extends State<CallPage> {
                   itemBuilder: (_, i) => _buildBubble(entries[entries.length - 1 - i]),
                 ),
         ),
-        if (isTranscribing) _buildTranscribingIndicator(),
       ],
     );
   }
@@ -753,76 +644,6 @@ class _CallPageState extends State<CallPage> {
           const Text(
             'Call content will appear here',
             style: TextStyle(fontSize: 15, color: Colors.white30),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildTranscribingIndicator() {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(14, 2, 14, 10),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.center,
-        children: [
-          Container(
-            width: 28,
-            height: 28,
-            decoration: BoxDecoration(
-              color: Colors.white.withValues(alpha: 0.1),
-              shape: BoxShape.circle,
-            ),
-            child: Icon(
-              Icons.phone_in_talk_rounded,
-              size: 14,
-              color: Colors.white.withValues(alpha: 0.5),
-            ),
-          ),
-          const SizedBox(width: 8),
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-            decoration: const BoxDecoration(
-              color: Color(0xFF1E1E30),
-              borderRadius: BorderRadius.only(
-                topLeft: Radius.circular(14),
-                topRight: Radius.circular(14),
-                bottomRight: Radius.circular(14),
-              ),
-            ),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                for (int i = 0; i < 3; i++) ...[
-                  AnimatedOpacity(
-                    opacity: _dotPhase == i ? 1.0 : 0.25,
-                    duration: const Duration(milliseconds: 200),
-                    child: Container(
-                      width: 7,
-                      height: 7,
-                      margin: const EdgeInsets.symmetric(horizontal: 2),
-                      decoration: const BoxDecoration(
-                        color: Colors.white,
-                        shape: BoxShape.circle,
-                      ),
-                    ),
-                  ),
-                ],
-              ],
-            ),
-          ),
-          const SizedBox(width: 10),
-          const Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                'Listening...',
-                style: TextStyle(fontSize: 15, color: Colors.white70),
-              ),
-              Text(
-                'Will appear shortly',
-                style: TextStyle(fontSize: 13, color: Colors.white38),
-              ),
-            ],
           ),
         ],
       ),
@@ -1049,47 +870,6 @@ class _CallPageState extends State<CallPage> {
           ),
         ),
       ],
-    );
-  }
-
-  Widget _buildSpeaker() {
-    return GestureDetector(
-      onTap: () => setState(() => _speakerOn = !_speakerOn),
-      child: Container(
-        margin: const EdgeInsets.symmetric(horizontal: 16),
-        padding: const EdgeInsets.symmetric(vertical: 18),
-        decoration: BoxDecoration(
-          color: Colors.white.withValues(alpha: 0.06),
-          borderRadius: BorderRadius.circular(14),
-          border: Border.all(
-            color: Colors.white
-                .withValues(alpha: _speakerOn ? 0.28 : 0.1),
-          ),
-        ),
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(
-              _speakerOn
-                  ? Icons.volume_up_rounded
-                  : Icons.volume_off_rounded,
-              color: Colors.white
-                  .withValues(alpha: _speakerOn ? 0.9 : 0.35),
-              size: 24,
-            ),
-            const SizedBox(width: 10),
-            Text(
-              _speakerOn ? 'Speaker On' : 'Speaker Off',
-              style: TextStyle(
-                fontSize: 17,
-                fontWeight: FontWeight.w500,
-                color: Colors.white
-                    .withValues(alpha: _speakerOn ? 0.9 : 0.35),
-              ),
-            ),
-          ],
-        ),
-      ),
     );
   }
 

@@ -20,7 +20,6 @@ import 'widgets/auth_guard.dart';
 import 'pages/welcome_page.dart';
 import 'pages/login_page.dart';
 import 'pages/menu_page.dart';
-import 'pages/monitor_page.dart';
 import 'pages/call_page.dart';
 import 'pages/stats_page.dart';
 import 'pages/food_recognition_page.dart';
@@ -238,7 +237,6 @@ class MyApp extends StatelessWidget {
         '/': (context) => const WelcomePage(),
         '/login': (context) => const LoginPage(),
         '/menu': (context) => const MenuPage(),
-        '/monitor': (context) => const AuthGuard(child: MonitorPage()),
         '/contacts': (context) => const AuthGuard(child: ContactsPage()),
         '/conversations': (context) => const AuthGuard(child: ConversationsPage()),
         '/stats': (context) => const AuthGuard(child: StatsPage()),
