@@ -114,8 +114,18 @@ Future<void> main() async {
     } else if (FcmService.I.needsSSEFallback) {
       DebugLogger.I.log('[main] FCM unavailable, will use SSE fallback after login');
     }
+    // Sync active call state on startup
+    DebugLogger.I.log('[main] Syncing active call state on startup');
+    callProvider.syncCallStatusOnResume().catchError((e) {
+      DebugLogger.I.log('[main] Error syncing call status on startup: $e');
+    });
   }).catchError((e) {
     DebugLogger.I.log('[main] FCM initialization error: $e');
+    // Still try to sync even if FCM init failed
+    DebugLogger.I.log('[main] Syncing active call state despite FCM error');
+    callProvider.syncCallStatusOnResume().catchError((e2) {
+      DebugLogger.I.log('[main] Error syncing call status on startup: $e2');
+    });
   });
 
   _runApp();
