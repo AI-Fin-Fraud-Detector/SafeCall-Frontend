@@ -1148,14 +1148,7 @@ class _CallPageState extends State<CallPage> {
       // 先擷取逐字稿與 conversationId，hangup() 會清空
       final transcript = List<TranscriptEntry>.from(_cp.fcmTranscript);
       final convId = _cp.conversationId;
-      final dur = _durationSecs;
       unawaited(_cp.hangup());
-      // 把通話時長存到本機，供通話記錄頁顯示
-      if (convId != null && dur > 0) {
-        SharedPreferences.getInstance().then((p) {
-          p.setInt('call_dur_$convId', dur);
-        });
-      }
       if (mounted) {
         final display = widget.contactName ?? widget.callerNumber ?? 'Unknown';
         final number = widget.callerNumber ?? '';

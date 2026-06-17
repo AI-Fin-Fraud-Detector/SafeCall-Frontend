@@ -299,12 +299,11 @@ class _ConversationSummaryPageState extends State<_ConversationSummaryPage> {
   }
 
   Future<void> _loadLocalData() async {
-    final prefs = await SharedPreferences.getInstance();
     final id = widget.conversation.id;
-    final dur = prefs.getInt('call_dur_$id');
 
-    // Fetch final score from conversation metadata via API
+    // Fetch final score and duration from conversation metadata via API
     int? score;
+    int? dur;
     try {
       final apiService = sl<ApiService>();
       final response = await apiService.dio.get('/api/fraud/conversations/$id');
@@ -314,8 +313,12 @@ class _ConversationSummaryPageState extends State<_ConversationSummaryPage> {
       if (scamProb != null) {
         score = (scamProb * 100).toInt();
       }
+      final durationSecs = metadata?['duration_seconds'] as num?;
+      if (durationSecs != null) {
+        dur = durationSecs.toInt();
+      }
     } catch (e) {
-      // If fetch fails, score remains null
+      // If fetch fails, score and duration remain null
     }
 
     if (mounted) {
