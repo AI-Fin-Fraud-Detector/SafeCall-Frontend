@@ -61,7 +61,7 @@ class CallPage extends StatefulWidget {
   State<CallPage> createState() => _CallPageState();
 }
 
-class _CallPageState extends State<CallPage> {
+class _CallPageState extends State<CallPage> with WidgetsBindingObserver {
   static bool get _isMock => ApiConfig.mockCallUi;
   bool get _isOutgoing => widget.mode == CallMode.outgoing;
 
@@ -99,6 +99,7 @@ class _CallPageState extends State<CallPage> {
   void initState() {
     super.initState();
     _cp = context.read<CallProvider>();
+    WidgetsBinding.instance.addObserver(this);
 
     _tickTimer = Timer.periodic(const Duration(seconds: 1), (_) {
       if (mounted) setState(() => _durationSecs++);
@@ -298,6 +299,7 @@ class _CallPageState extends State<CallPage> {
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _tickTimer?.cancel();
     for (final t in _mockTimers) {
       t.cancel();
@@ -307,6 +309,21 @@ class _CallPageState extends State<CallPage> {
       _cp.removeListener(_onProviderUpdate);
     }
     super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed && _cp.conversationId != null) {
+      DebugLogger.I.log('[CallPage] App resumed, re-syncing conversation history');
+      sl<ApiService>().dio.get('/api/fraud/conversations/${_cp.conversationId}/messages').then((response) {
+        final data = response.data as Map<String, dynamic>? ?? {};
+        final messages = data['messages'] as List<dynamic>? ?? [];
+        DebugLogger.I.log('[CallPage] Re-synced ${messages.length} messages from backend');
+        _cp.loadConversationHistory(messages);
+      }).catchError((e) {
+        DebugLogger.I.log('[CallPage] Failed to re-sync conversation: $e');
+      });
+    }
   }
 
   String _fmt(int secs) {

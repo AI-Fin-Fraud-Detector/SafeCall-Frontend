@@ -189,12 +189,27 @@ class CallProvider extends ChangeNotifier {
         final msg = _parseField(data['message']);
         final id = msg['id'] as String? ?? '';
         if (id.isEmpty) return;
-        _fcmMsgs.add(_FcmMsg(
-          id: id,
-          content: msg['content'] as String? ?? '',
-          role: msg['role'] as String? ?? 'user',
-          receivedAt: DateTime.now(),
-        ));
+
+        // Use backend created_at timestamp if available
+        DateTime receivedAt = DateTime.now();
+        final createdAt = msg['created_at'] as String?;
+        if (createdAt != null) {
+          try {
+            receivedAt = DateTime.parse(createdAt);
+          } catch (_) {}
+        }
+
+        // Check if message already exists (avoid duplication)
+        if (!_fcmMsgs.any((m) => m.id == id)) {
+          _fcmMsgs.add(_FcmMsg(
+            id: id,
+            content: msg['content'] as String? ?? '',
+            role: msg['role'] as String? ?? 'user',
+            receivedAt: receivedAt,
+          ));
+          // Sort by timestamp to maintain chronological order
+          _fcmMsgs.sort((a, b) => a.receivedAt.compareTo(b.receivedAt));
+        }
         notifyListeners();
 
       case 'call_update_message':
@@ -384,6 +399,7 @@ class CallProvider extends ChangeNotifier {
 
   /// Load conversation history from API, deduplicating by message ID
   /// If duplicate found, replace with API version (authoritative)
+  /// Sorts by timestamp to ensure correct ordering
   void loadConversationHistory(List<dynamic> messages) {
     for (final msg in messages) {
       if (msg is Map<String, dynamic>) {
@@ -424,6 +440,8 @@ class CallProvider extends ChangeNotifier {
         }
       }
     }
+    // Sort by timestamp to ensure chronological order
+    _fcmMsgs.sort((a, b) => a.receivedAt.compareTo(b.receivedAt));
     notifyListeners();
   }
 
