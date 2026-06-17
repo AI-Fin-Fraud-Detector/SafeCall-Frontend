@@ -1154,7 +1154,6 @@ class _CallPageState extends State<CallPage> {
       if (convId != null && dur > 0) {
         SharedPreferences.getInstance().then((p) {
           p.setInt('call_dur_$convId', dur);
-          if (_maxScore > 0) p.setInt('call_score_$convId', _maxScore);
         });
       }
       if (mounted) {

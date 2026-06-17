@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../di/service_locator.dart';
 import '../models/conversation_models.dart';
+import '../services/api_service.dart';
 import '../services/conversation_service.dart';
 import 'call_summary_page.dart';
 
@@ -300,7 +302,22 @@ class _ConversationSummaryPageState extends State<_ConversationSummaryPage> {
     final prefs = await SharedPreferences.getInstance();
     final id = widget.conversation.id;
     final dur = prefs.getInt('call_dur_$id');
-    final score = prefs.getInt('call_score_$id');
+
+    // Fetch final score from conversation metadata via API
+    int? score;
+    try {
+      final apiService = sl<ApiService>();
+      final response = await apiService.dio.get('/api/fraud/conversations/$id');
+      final data = response.data as Map<String, dynamic>?;
+      final metadata = data?['metadata'] as Map<String, dynamic>?;
+      final scamProb = metadata?['scam_probability'] as num?;
+      if (scamProb != null) {
+        score = (scamProb * 100).toInt();
+      }
+    } catch (e) {
+      // If fetch fails, score remains null
+    }
+
     if (mounted) {
       setState(() {
         _durationSecs = dur;
