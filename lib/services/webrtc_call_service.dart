@@ -19,6 +19,9 @@ class WebRtcCallService {
   RTCPeerConnection? _pc;
   MediaStream? _localStream;
   bool _connecting = false;
+  // Set by close() to abort an in-flight connect() (e.g. hangup during the
+  // offer-poll window, before _pc/_localStream exist).
+  bool _cancelled = false;
 
   bool get isActive => _pc != null;
 
@@ -33,28 +36,34 @@ class WebRtcCallService {
   Future<void> connect() async {
     if (_connecting || _pc != null) return;
     _connecting = true;
+    _cancelled = false;
     try {
       final api = sl<ApiService>();
 
       // 1. Edge produces the offer asynchronously after `direct_call`; poll for it.
       String? offerSdp;
       for (var attempt = 0; attempt < 20; attempt++) {
+        if (_cancelled) return;
         offerSdp = await api.getWebrtcOffer();
         if (offerSdp != null && offerSdp.isNotEmpty) break;
         await Future.delayed(const Duration(milliseconds: 500));
       }
+      if (_cancelled) return;
       if (offerSdp == null || offerSdp.isEmpty) {
         DebugLogger.I.log('[WebRTC] No offer after retries; aborting handoff');
         return;
       }
 
-      // 2. Capture the elder's microphone.
+      // 2. Capture the elder's microphone. Assign instance fields as soon as each
+      // resource exists so a concurrent close() (hangup mid-setup) can tear it down.
       _localStream = await navigator.mediaDevices
           .getUserMedia({'audio': true, 'video': false});
+      if (_cancelled) return await close();
 
       // 3. Build the peer connection and attach the mic track.
-      final pc = await createPeerConnection(_config);
-      _pc = pc;
+      _pc = await createPeerConnection(_config);
+      if (_cancelled) return await close();
+      final pc = _pc!;
       for (final track in _localStream!.getTracks()) {
         await pc.addTrack(track, _localStream!);
       }
@@ -68,9 +77,11 @@ class WebRtcCallService {
 
       // 4. Answer the offer, wait for ICE gathering (non-trickle), post the answer.
       await pc.setRemoteDescription(RTCSessionDescription(offerSdp, 'offer'));
+      if (_cancelled) return await close();
       final answer = await pc.createAnswer();
       await pc.setLocalDescription(answer);
       final gathered = await _gatheredLocalDescription(pc);
+      if (_cancelled) return await close();
 
       // Route the caller's audio out the loudspeaker.
       try {
@@ -123,8 +134,10 @@ class WebRtcCallService {
     } catch (_) {}
   }
 
-  /// Tear down the peer connection and release the microphone.
+  /// Tear down the peer connection and release the microphone. Always flags
+  /// cancellation so an in-flight connect() aborts even if nothing exists yet.
   Future<void> close() async {
+    _cancelled = true;
     if (_pc == null && _localStream == null) return;
     try {
       for (final t in _localStream?.getTracks() ?? const []) {
