@@ -9,6 +9,7 @@ import '../models/stats_record.dart';
 import '../services/fcm_service.dart';
 import '../services/debug_logger.dart';
 import '../services/api_service.dart';
+import '../services/webrtc_call_service.dart';
 import '../di/service_locator.dart';
 
 
@@ -384,6 +385,7 @@ class CallProvider extends ChangeNotifier {
     } else if (_conversationId != null) {
       await sl<ApiService>().callEnd();
     }
+    await WebRtcCallService.I.close();
     _endCall();
     _clearFcmCall();
     notifyListeners();
@@ -392,6 +394,7 @@ class CallProvider extends ChangeNotifier {
   /// End call locally WITHOUT sending hangup API (for remote hangup events)
   void endCallFromRemote() {
     DebugLogger.I.log('[CallProvider] Ending call due to remote hangup');
+    WebRtcCallService.I.close();
     _endCall();
     _clearFcmCall();
     notifyListeners();
