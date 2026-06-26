@@ -4,6 +4,7 @@ import 'package:flutter_webrtc/flutter_webrtc.dart';
 
 import 'api_service.dart';
 import 'debug_logger.dart';
+import 'permissions_service.dart';
 import '../di/service_locator.dart';
 
 /// Manages the WebRTC peer connection that carries live two-way audio between the
@@ -38,6 +39,14 @@ class WebRtcCallService {
     _connecting = true;
     _cancelled = false;
     try {
+      // Microphone permission must be granted before getUserMedia can capture audio.
+      final micGranted = await PermissionsService.I.requestMicrophone();
+      if (_cancelled) return;
+      if (!micGranted) {
+        DebugLogger.I.log('[WebRTC] Microphone permission denied; aborting handoff');
+        return;
+      }
+
       final api = sl<ApiService>();
 
       // 1. Edge produces the offer asynchronously after `direct_call`; poll for it.
