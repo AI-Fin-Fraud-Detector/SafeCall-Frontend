@@ -248,6 +248,29 @@ class ApiService {
     } catch (_) {}
   }
 
+  /// Fetch the edge WebRTC SDP offer, or null if it isn't ready yet.
+  Future<String?> getWebrtcOffer() async {
+    try {
+      final resp = await _dio.get('/api/fraud/webrtc/offer');
+      if (resp.statusCode == 200 && resp.data is Map) {
+        final m = resp.data as Map;
+        if (m['status'] == 'ready') return m['sdp'] as String?;
+      }
+    } catch (e) {
+      DebugLogger.I.log('[API] getWebrtcOffer failed: $e');
+    }
+    return null;
+  }
+
+  /// Send kebbi's WebRTC SDP answer to the fraud service (relayed to edge).
+  Future<void> postWebrtcAnswer(String sdp) async {
+    try {
+      await _dio.post('/api/fraud/webrtc/answer', data: {'sdp': sdp});
+    } catch (e) {
+      DebugLogger.I.log('[API] postWebrtcAnswer failed: $e');
+    }
+  }
+
   Future<void> callEnd() async {
     try {
       await _dio.post('/api/fraud/call-end');

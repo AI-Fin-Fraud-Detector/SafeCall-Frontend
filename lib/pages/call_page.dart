@@ -13,6 +13,7 @@ import '../models/conversation_models.dart';
 import '../providers/call_provider.dart';
 import '../services/api_service.dart';
 import '../services/debug_logger.dart';
+import '../services/webrtc_call_service.dart';
 import 'call_summary_page.dart';
 import 'conversations_page.dart';
 
@@ -900,7 +901,12 @@ class _CallPageState extends State<CallPage> with WidgetsBindingObserver {
     setState(() => _userAnswered = true);
     if (!_isMock) {
       _cp.acceptCall();
-      unawaited(sl<ApiService>().answerCall());
+      // Tell the backend the user answered (stops AI, triggers edge's WebRTC offer),
+      // then establish the live audio link to the caller via edge.
+      unawaited(() async {
+        await sl<ApiService>().answerCall();
+        await WebRtcCallService.I.connect();
+      }());
     }
   }
 
