@@ -9,12 +9,18 @@ class SsciData {
   final double? stability;
   final int? nK;
   final bool? latestTriggerDecision;
+  final String? callerType;
+  final double? scamThreshold;
+  final double? scamProbability;
 
   const SsciData({
     required this.available,
     required this.updated,
     required this.rawInferenceCount,
     required this.triggerCount,
+    this.scamProbability,
+    this.callerType,
+    this.scamThreshold,
     this.confidence,
     this.evidence,
     this.agreement,
@@ -26,9 +32,12 @@ class SsciData {
   factory SsciData.fromJson(Map<String, dynamic> json) {
     return SsciData(
       available: json['available'] as bool? ?? false,
-      updated: json['updated'] as bool? ?? false,
+      updated: json['updated'] as bool? ?? json['trigger_index'] != null,
       rawInferenceCount: json['raw_inference_count'] as int? ?? 0,
-      triggerCount: json['trigger_count'] as int? ?? 0,
+      triggerCount: (json['trigger_index'] as num?)?.toInt() ?? (json['trigger_count'] as num?)?.toInt() ?? 0,
+      scamProbability: (json['scam_probability'] as num?)?.toDouble(),
+      callerType: json['caller_type'] as String?,
+      scamThreshold: (json['scam_threshold'] as num?)?.toDouble(),
       confidence: (json['confidence'] as num?)?.toDouble(),
       evidence: (json['evidence'] as num?)?.toDouble(),
       agreement: (json['agreement'] as num?)?.toDouble(),

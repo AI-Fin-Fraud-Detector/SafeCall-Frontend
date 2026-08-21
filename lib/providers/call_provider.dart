@@ -86,6 +86,9 @@ class CallProvider extends ChangeNotifier {
   String? _callerPhone;
   String? get callerPhone => _callerPhone;
 
+  String? _callerType;
+  String? get callerType => _callerType;
+
   String? _callerName;
   String? get callerName => _callerName;
 
@@ -176,6 +179,10 @@ class CallProvider extends ChangeNotifier {
             data['conversation_id'] as String?;
         _callerPhone = detail['phone_number'] as String? ??
             data['phone_number'] as String?;
+        _callerName = detail['caller_name'] as String? ??
+            data['caller_name'] as String?;
+        _callerType = detail['caller_type'] as String? ??
+            data['caller_type'] as String?;
         DebugLogger.I.log('[CallProvider] incoming_call set: conversationId=$_conversationId, phone=$_callerPhone, hasActiveCall=$hasActiveCall');
         _callStartAt = DateTime.now();
         _callTicker?.cancel();
@@ -231,61 +238,53 @@ class CallProvider extends ChangeNotifier {
       case 'ssci_update':
         final convId = data['conversation_id'] as String? ?? '';
         if (_conversationId != null && convId != _conversationId) return;
-        final ssciMap = _parseField(data['ssci']);
-        _scamProbability = (ssciMap['scam_probability'] as num?)?.toDouble() ?? _scamProbability;
-        _ssciData = SsciData(
-          available: true,
-          updated: true,
-          rawInferenceCount: 0,
-          triggerCount: (ssciMap['trigger_index'] as num?)?.toInt() ?? 0,
-          confidence: (ssciMap['confidence'] as num?)?.toDouble(),
-          evidence: (ssciMap['evidence'] as num?)?.toDouble(),
-          agreement: (ssciMap['agreement'] as num?)?.toDouble(),
-          stability: (ssciMap['stability'] as num?)?.toDouble(),
-        );
+        _applySsciPayload(data['ssci']);
         notifyListeners();
+        break;
 
       case 'fraud_alert':
         final convId = data['conversation_id'] as String? ?? '';
         if (_conversationId != null && convId != _conversationId) return;
         _isFraudAlert = true;
-        final prob = (data['scam_probability'] as num?)?.toDouble();
-        if (prob != null) _scamProbability = prob;
-        final ssciMap = _parseField(data['ssci']);
-        if (ssciMap.isNotEmpty) {
-          _ssciData = SsciData(
-            available: true,
-            updated: true,
-            rawInferenceCount: 0,
-            triggerCount: (ssciMap['trigger_index'] as num?)?.toInt() ?? 0,
-            confidence: (ssciMap['confidence'] as num?)?.toDouble(),
-            evidence: (ssciMap['evidence'] as num?)?.toDouble(),
-            agreement: (ssciMap['agreement'] as num?)?.toDouble(),
-            stability: (ssciMap['stability'] as num?)?.toDouble(),
-          );
+        _applySsciPayload(data['ssci']);
+
+        final topLevelProbability =
+            (data['scam_probability'] as num?)?.toDouble();
+
+        if (topLevelProbability != null) {
+          _scamProbability = topLevelProbability;
         }
         notifyListeners();
+        break;
 
       case 'safe_to_answer':
         final convId = data['conversation_id'] as String? ?? '';
         if (_conversationId != null && convId != _conversationId) return;
         _isSafeToAnswer = true;
-        final prob = (data['scam_probability'] as num?)?.toDouble();
-        if (prob != null) _scamProbability = prob;
-        final ssciMap = _parseField(data['ssci']);
-        if (ssciMap.isNotEmpty) {
-          _ssciData = SsciData(
-            available: true,
-            updated: true,
-            rawInferenceCount: 0,
-            triggerCount: (ssciMap['trigger_index'] as num?)?.toInt() ?? 0,
-            confidence: (ssciMap['confidence'] as num?)?.toDouble(),
-            evidence: (ssciMap['evidence'] as num?)?.toDouble(),
-            agreement: (ssciMap['agreement'] as num?)?.toDouble(),
-            stability: (ssciMap['stability'] as num?)?.toDouble(),
-          );
+        _applySsciPayload(data['ssci']);
+
+        final topLevelProbability =
+            (data['scam_probability'] as num?)?.toDouble();
+
+        if (topLevelProbability != null) {
+          _scamProbability = topLevelProbability;
         }
         notifyListeners();
+        break;
+    }
+  }
+
+  void _applySsciPayload(dynamic rawSsci) {
+    final ssciMap = _parseField(rawSsci);
+    final parsed = SsciData.fromJson(ssciMap);
+
+    _ssciData = parsed;
+
+    if (parsed.scamProbability != null) {
+      _scamProbability = parsed.scamProbability!;
+    }
+    if (parsed.callerType != null) {
+      _callerType = parsed.callerType;
     }
   }
 
@@ -370,6 +369,7 @@ class CallProvider extends ChangeNotifier {
     _conversationId = null;
     _callerPhone = null;
     _callerName = null;
+    _callerType = null;
     _fcmMsgs.clear();
     _scamProbability = 0.0;
     _ssciData = null;
