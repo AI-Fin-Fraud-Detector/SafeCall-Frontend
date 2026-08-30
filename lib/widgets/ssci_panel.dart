@@ -125,7 +125,62 @@ class _SsciPanelState extends State<SsciPanel> with TickerProviderStateMixin {
     );
   }
 
+  Widget? _buildCallerTypeBadge(String? callerType) {
+    switch (callerType) {
+      case 'contact':
+        return _callerTypeBadge(
+          label: 'Contact',
+          color: const Color(0xFF27AE60),
+        );
+
+      case 'non_contact':
+        return _callerTypeBadge(
+          label: 'Unknown number',
+          color: const Color(0xFFF39C12),
+        );
+
+      case 'private':
+        return _callerTypeBadge(
+          label: 'Private Number',
+          color: const Color(0xFFE74C3C),
+        );
+
+      default:
+        return null;
+    }
+  }
+
+  Widget _callerTypeBadge({
+    required String label,
+    required Color color,
+  }) {
+    return Container(
+      padding: const EdgeInsets.symmetric(
+        horizontal: 10,
+        vertical: 4,
+      ),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.15),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(
+          color: color.withValues(alpha: 0.5),
+        ),
+      ),
+      child: Text(
+        label,
+        style: GoogleFonts.itim(
+          fontSize: 13,
+          fontWeight: FontWeight.w600,
+          color: color,
+        ),
+      ),
+    );
+  }
+
   Widget _buildAvailable(SsciData ssci) {
+    final callerTypeBadge =
+          _buildCallerTypeBadge(ssci.callerType);
+
     return AnimatedBuilder(
       animation: _controller,
       builder: (context, _) {
@@ -135,6 +190,13 @@ class _SsciPanelState extends State<SsciPanel> with TickerProviderStateMixin {
 
         return Column(
           children: [
+            if (callerTypeBadge != null) ...[
+              Align(
+                alignment: Alignment.centerLeft,
+                child: callerTypeBadge,
+              ),
+              const SizedBox(height: 12),
+            ],
             // 主分數 + 狀態 badge
             Row(
               mainAxisAlignment: MainAxisAlignment.center,

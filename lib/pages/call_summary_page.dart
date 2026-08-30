@@ -53,6 +53,7 @@ class CallSummaryPage extends StatelessWidget {
   final bool userAnswered;
   final String pageTitle;
   final VoidCallback? onViewTranscript; // 若設定，底部顯示「查看逐字稿」按鈕
+  final double? scamThreshold;
 
   const CallSummaryPage({
     super.key,
@@ -66,6 +67,7 @@ class CallSummaryPage extends StatelessWidget {
     required this.userAnswered,
     this.pageTitle = 'Call Ended',
     this.onViewTranscript,
+    this.scamThreshold,
   });
 
   String _fmt(int secs) {
@@ -405,7 +407,7 @@ class CallSummaryPage extends StatelessWidget {
             height: 180,
             child: CustomPaint(
               size: Size.infinite,
-              painter: _ScoreChartPainter(scoreHistory),
+              painter: _ScoreChartPainter(scoreHistory, scamThreshold: scamThreshold),
             ),
           ),
         ],
@@ -659,8 +661,12 @@ class _SuspiciousPhrase extends StatelessWidget {
 
 class _ScoreChartPainter extends CustomPainter {
   final List<({int seconds, int score})> data;
+  final double? scamThreshold;
 
-  const _ScoreChartPainter(this.data);
+  const _ScoreChartPainter(
+    this.data,{
+    this.scamThreshold,
+  });
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -708,6 +714,43 @@ class _ScoreChartPainter extends CustomPainter {
         textDirection: TextDirection.ltr,
       )..layout();
       tp.paint(canvas, Offset(padL - tp.width - 5, y - tp.height / 2));
+    }
+
+    if (scamThreshold != null) {
+      final thresholdScore =
+          (scamThreshold! * 100).clamp(0.0, 100.0);
+
+      final thresholdY =
+          padT + plotH * (1 - thresholdScore / 100);
+
+      final thresholdPaint = Paint()
+        ..color = const Color(0xFFE53935)
+        ..strokeWidth = 1.5;
+
+      canvas.drawLine(
+        Offset(padL, thresholdY),
+        Offset(padL + plotW, thresholdY),
+        thresholdPaint,
+      );
+
+      final tp = TextPainter(
+        text: TextSpan(
+          text: 'Threshold ${thresholdScore.round()}',
+          style: const TextStyle(
+            fontSize: 10,
+            color: Color(0xFFE53935),
+          ),
+        ),
+        textDirection: TextDirection.ltr,
+      )..layout();
+
+      tp.paint(
+        canvas,
+        Offset(
+          padL + plotW - tp.width,
+          thresholdY - tp.height - 3,
+        ),
+      );
     }
 
     // ── Convert data to canvas offsets ────────────────────────────────────
@@ -774,5 +817,5 @@ class _ScoreChartPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(covariant _ScoreChartPainter old) =>
-      old.data.length != data.length;
+      old.data.length != data.length || old.scamThreshold != scamThreshold;
 }

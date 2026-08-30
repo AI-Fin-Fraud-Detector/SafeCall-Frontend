@@ -138,11 +138,25 @@ class _CallPageState extends State<CallPage> with WidgetsBindingObserver {
 
   void _onProviderUpdate() {
     if (!mounted) return;
-    final newScore = (_cp.scamProbability * 100).round();
-    if (newScore != _lastRealScore) {
-      _lastRealScore = newScore;
-      setState(() => _updateScore(newScore));
-    }
+    final ssci = _cp.ssciData;
+
+    final canDisplayScore =
+      ssci != null &&
+      ssci.triggerCount >= 2 &&
+      ssci.scamProbability != null;
+
+    if (canDisplayScore) {
+      final newScore =
+          (ssci.scamProbability! * 100).round();
+
+      if (newScore != _lastRealScore) {
+        _lastRealScore = newScore;
+
+        setState(() {
+          _updateScore(newScore);
+        });
+      }
+  }
 
     // Auto-scroll to latest message when messages change
     final messageCount = _cp.fcmTranscript.length;
@@ -338,6 +352,7 @@ class _CallPageState extends State<CallPage> with WidgetsBindingObserver {
   @override
   Widget build(BuildContext context) {
     final cp = context.watch<CallProvider>();
+    final ssci = cp.ssciData;
 
     if (!_isMock && !cp.hasActiveCall && !_isHangingUp) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -347,9 +362,20 @@ class _CallPageState extends State<CallPage> with WidgetsBindingObserver {
       });
     }
 
+
+    final bool hasScore = _isMock ||
+      (
+        ssci != null &&
+        ssci.triggerCount >= 2 &&
+        ssci.scamProbability != null
+      );
+
     final int score = _isMock
         ? _mockScore
-        : (cp.scamProbability * 100).round();
+         : hasScore
+             ? (ssci!.scamProbability! * 100).round()
+             : 0;
+
     final int durSecs = _isMock ? _durationSecs : cp.callDuration.inSeconds;
     final String caller = _isMock
         ? (widget.callerNumber ?? (_isOutgoing ? '0912-345-678' : '0800-123-456'))
@@ -363,7 +389,7 @@ class _CallPageState extends State<CallPage> with WidgetsBindingObserver {
 
     final bool isScoreStale = _isMock ? _isScoreStale : false;
 
-    final bool hasScore = score > 0;
+
     final bool isHighRisk = score >= 80 || (!_isMock && cp.isFraudAlert);
 
     return Scaffold(
@@ -372,8 +398,8 @@ class _CallPageState extends State<CallPage> with WidgetsBindingObserver {
         child: Column(
           children: [
             _buildPills(),
-            _buildHeader(caller, durSecs),
-            _buildRiskBlock(score, hasScore, isScoreStale),
+            _buildHeader(caller, durSecs, cp.callerType ?? cp.ssciData?.callerType,),
+            _buildRiskBlock(score, hasScore, isScoreStale, cp.ssciData?.scamThreshold),
             const SizedBox(height: 6),
             Expanded(
               child: _buildTranscriptSection(transcript),
@@ -407,7 +433,62 @@ class _CallPageState extends State<CallPage> with WidgetsBindingObserver {
     );
   }
 
-  Widget _buildHeader(String caller, int secs) {
+  Widget? _buildCallerTypeBadge(String? callerType) {
+    switch (callerType) {
+      case 'contact':
+        return _callerTypeBadge(
+          label: 'Contact',
+          color: const Color(0xFF4CAF50),
+        );
+
+      case 'non_contact':
+        return _callerTypeBadge(
+          label: 'Unknown number',
+          color: const Color(0xFFF39C12),
+        );
+
+      case 'private':
+        return _callerTypeBadge(
+          label: 'Private Number',
+          color: const Color(0xFFF44336),
+        );
+
+      default:
+        return null;
+    }
+  }
+
+  Widget _callerTypeBadge({
+    required String label,
+    required Color color,
+  }) {
+    return Container(
+      padding: const EdgeInsets.symmetric(
+        horizontal: 9,
+        vertical: 4,
+      ),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.16),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: color.withValues(alpha: 0.55),
+        ),
+      ),
+      child: Text(
+        label,
+        style: TextStyle(
+          fontSize: 12,
+          fontWeight: FontWeight.w600,
+          color: color,
+        ),
+      ),
+    );
+  }
+
+  Widget _buildHeader(String caller, int secs, String? callerType) {
+    final callerTypeBadge =
+          _buildCallerTypeBadge(callerType);
+
     final String label = _isOutgoing
         ? (widget.contactName ?? 'Outgoing Call')
         : (widget.contactName ?? caller);
@@ -441,6 +522,10 @@ class _CallPageState extends State<CallPage> with WidgetsBindingObserver {
                   color: Colors.white,
                 ),
               ),
+              if (callerTypeBadge != null) ...[
+                const SizedBox(height: 6),
+                callerTypeBadge,
+              ],
               if (_isOutgoing || showNumberBelow)
                 Text(
                   caller,
@@ -457,7 +542,7 @@ class _CallPageState extends State<CallPage> with WidgetsBindingObserver {
     );
   }
 
-  Widget _buildRiskBlock(int score, bool hasScore, bool isScoreStale) {
+  Widget _buildRiskBlock(int score, bool hasScore, bool isScoreStale, double? scamThreshold,) {
     if (!hasScore) {
       return Container(
         margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
@@ -561,19 +646,85 @@ class _CallPageState extends State<CallPage> with WidgetsBindingObserver {
           ),
 
           const SizedBox(height: 10),
-          ClipRRect(
-            borderRadius: BorderRadius.circular(4),
-            child: TweenAnimationBuilder<double>(
-              tween: Tween<double>(begin: 0, end: score / 100),
-              duration: const Duration(milliseconds: 600),
-              builder: (_, val, __) => LinearProgressIndicator(
-                value: val,
-                minHeight: 6,
-                backgroundColor: fg.withValues(alpha: 0.15),
-                valueColor: AlwaysStoppedAnimation<Color>(fg),
-              ),
+          SizedBox(
+            height: 22,
+            child: LayoutBuilder(
+              builder: (context, constraints) {
+                final normalizedThreshold =
+                    scamThreshold?.clamp(0.0, 1.0).toDouble();
+
+                final thresholdPosition = normalizedThreshold == null
+                    ? null
+                    : constraints.maxWidth * normalizedThreshold;
+
+                return Stack(
+                  clipBehavior: Clip.none,
+                  children: [
+                    Positioned(
+                      left: 0,
+                      right: 0,
+                      top: 8,
+                      child: ClipRRect(
+                        borderRadius: BorderRadius.circular(4),
+                        child: TweenAnimationBuilder<double>(
+                          tween: Tween<double>(
+                            begin: 0,
+                            end: score / 100,
+                          ),
+                          duration: const Duration(milliseconds: 600),
+                          builder: (_, val, __) {
+                            return LinearProgressIndicator(
+                              value: val,
+                              minHeight: 6,
+                              backgroundColor:
+                                  fg.withValues(alpha: 0.15),
+                              valueColor:
+                                  AlwaysStoppedAnimation<Color>(fg),
+                            );
+                          },
+                        ),
+                      ),
+                    ),
+
+                    if (thresholdPosition != null)
+                      Positioned(
+                        left: thresholdPosition - 1,
+                        top: 2,
+                        child: Container(
+                          width: 2,
+                          height: 18,
+                          decoration: BoxDecoration(
+                            color: Colors.white,
+                            borderRadius: BorderRadius.circular(1),
+                            boxShadow: [
+                              BoxShadow(
+                                color: Colors.black.withValues(alpha: 0.35),
+                                blurRadius: 2,
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                  ],
+                );
+              },
             ),
           ),
+
+          if (scamThreshold != null)
+            Align(
+              alignment: Alignment(
+                scamThreshold.clamp(0.0, 1.0) * 2 - 1,
+                0,
+              ),
+              child: Text(
+                'Threshold ${(scamThreshold * 100).round()}',
+                style: TextStyle(
+                  fontSize: 11,
+                  color: fg.withValues(alpha: 0.75),
+                ),
+              ),
+            ),
 
           const SizedBox(height: 8),
 
@@ -951,6 +1102,7 @@ class _CallPageState extends State<CallPage> with WidgetsBindingObserver {
       // 先擷取逐字稿與 conversationId，hangup() 會清空
       final transcript = List<TranscriptEntry>.from(_cp.fcmTranscript);
       final convId = _cp.conversationId;
+      final scamThreshold = _cp.ssciData?.scamThreshold;
       unawaited(_cp.hangup());
       if (mounted) {
         final display = widget.contactName ?? widget.callerNumber ?? 'Unknown';
@@ -967,6 +1119,7 @@ class _CallPageState extends State<CallPage> with WidgetsBindingObserver {
               transcript: transcript,
               wasIncoming: !_isOutgoing,
               userAnswered: _userAnswered,
+              scamThreshold: scamThreshold,
               onViewTranscript: convId == null ? null : () => nav.push(
                 MaterialPageRoute(
                   builder: (_) => ConversationDetailPage(
