@@ -142,7 +142,7 @@ class _CallPageState extends State<CallPage> with WidgetsBindingObserver {
 
     final canDisplayScore =
       ssci != null &&
-      ssci.triggerCount >= 2 &&
+      ssci.triggerCount >= 1 &&
       ssci.scamProbability != null;
 
     if (canDisplayScore) {
@@ -366,7 +366,7 @@ class _CallPageState extends State<CallPage> with WidgetsBindingObserver {
     final bool hasScore = _isMock ||
       (
         ssci != null &&
-        ssci.triggerCount >= 2 &&
+        ssci.triggerCount >= 1 &&
         ssci.scamProbability != null
       );
 
