@@ -7,6 +7,7 @@ import android.util.Log
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
+import com.nuwarobotics.service.agent.NuwaRobotAPI
 import org.vosk.Model
 import org.vosk.Recognizer
 import org.vosk.android.RecognitionListener
@@ -16,6 +17,11 @@ import java.io.FileOutputStream
 import java.net.HttpURLConnection
 import java.net.URL
 import java.util.zip.ZipInputStream
+import tw.futuremedialab.frauddetect.kebbi.ChassisSafetyManager
+import tw.futuremedialab.frauddetect.kebbi.LedManager
+import tw.futuremedialab.frauddetect.kebbi.ScenarioEngine
+import tw.futuremedialab.frauddetect.kebbi.ScenarioRepository
+import tw.futuremedialab.frauddetect.kebbi.SoundEffectManager
 
 class MainActivity : FlutterActivity() {
 
@@ -23,6 +29,12 @@ class MainActivity : FlutterActivity() {
         private const val CHANNEL = "kebbi"
         private const val TAG = "[KebbiMain]"
         private const val ACTION_RAISE_RIGHT_ARM = "666_BA_RArmS90"
+        private const val SCENARIO_FRAUD = "fraud_siren"
+        private const val SCENARIO_SAFE = "butler_celebrate"
+
+        // 預設關閉。動作會讓機器人以約 0.3 m/s 移動，放在桌上會掉下去。
+        // Flutter 端用 setChassisEnabled 開啟。
+        private const val CHASSIS_ENABLED_BY_DEFAULT = false
         private const val VOSK_MODEL_NAME = "vosk-model-small-en-us-0.15"
         private const val VOSK_MODEL_URL =
             "https://alphacephei.com/vosk/models/vosk-model-small-en-us-0.15.zip"
@@ -31,6 +43,11 @@ class MainActivity : FlutterActivity() {
     private var robotApi: Any? = null
     private var methodChannel: MethodChannel? = null
     private val mainHandler = Handler(Looper.getMainLooper())
+
+    // 動作播放
+    private var scenarioEngine: ScenarioEngine? = null
+    private var soundManager: SoundEffectManager? = null
+    @Volatile private var chassisEnabled = CHASSIS_ENABLED_BY_DEFAULT
 
     // Vosk
     private var voskModel: Model? = null
@@ -55,16 +72,50 @@ class MainActivity : FlutterActivity() {
                     }
                 }
 
-                "fraud", "safe" -> {
-                    try {
-                        ensureRobotApi()
-                        val ok = playMotion(ACTION_RAISE_RIGHT_ARM)
-                        if (ok) result.success(null)
-                        else result.error("ACTION_FAIL", "Robot API not ready", null)
-                    } catch (t: Throwable) {
-                        Log.e(TAG, "action error", t)
-                        result.error("ACTION_FAIL", t.message, null)
+                "fraud" -> playScenario(SCENARIO_FRAUD, result)
+
+                "safe" -> playScenario(SCENARIO_SAFE, result)
+
+                "playScenario" -> {
+                    val id = call.argument<String>("id")
+                    if (id.isNullOrBlank()) {
+                        result.error("BAD_ARGS", "scenario id is required", null)
+                    } else {
+                        playScenario(id, result)
                     }
+                }
+
+                "stopScenario" -> {
+                    try {
+                        scenarioEngine?.stop()
+                        result.success(null)
+                    } catch (t: Throwable) {
+                        Log.e(TAG, "stopScenario error", t)
+                        result.error("STOP_FAIL", t.message, null)
+                    }
+                }
+
+                "isScenarioPlaying" -> {
+                    result.success(scenarioEngine?.isPlaying ?: false)
+                }
+
+                "listScenarios" -> {
+                    result.success(
+                        ScenarioRepository.allScenarios.map {
+                            mapOf(
+                                "id" to it.id,
+                                "title" to it.title,
+                                "category" to it.category.name,
+                                "description" to it.description,
+                            )
+                        }
+                    )
+                }
+
+                "setChassisEnabled" -> {
+                    chassisEnabled = call.argument<Boolean>("enabled") ?: false
+                    Log.i(TAG, "chassis driving enabled = $chassisEnabled")
+                    result.success(chassisEnabled)
                 }
 
                 "checkKebbi" -> {
@@ -382,6 +433,64 @@ class MainActivity : FlutterActivity() {
         return "\"$key\"\\s*:\\s*\"([^\"]*)\"".toRegex().find(json)?.groupValues?.getOrNull(1)
     }
 
+    /** 回傳 false 表示已經有動作在播。引擎建不起來時退回原本的舉右手。 */
+    private fun playScenario(id: String, result: MethodChannel.Result) {
+        try {
+            val scenario = ScenarioRepository.findById(id)
+            if (scenario == null) {
+                result.error("NO_SCENARIO", "Unknown scenario id: $id", null)
+                return
+            }
+
+            val engine = ensureScenarioEngine()
+            if (engine != null) {
+                result.success(engine.play(scenario))
+                return
+            }
+
+            // 拿不到 robot API，退回原本的行為
+            Log.w(TAG, "scenario engine unavailable, falling back to single motion")
+            ensureRobotApi()
+            if (playMotion(ACTION_RAISE_RIGHT_ARM)) {
+                result.success(true)
+            } else {
+                result.error("ACTION_FAIL", "Robot API not ready", null)
+            }
+        } catch (t: Throwable) {
+            Log.e(TAG, "playScenario($id) error", t)
+            result.error("ACTION_FAIL", t.message, null)
+        }
+    }
+
+    /** 用跟 STT 同一個 NuwaRobotAPI，避免兩邊搶機器人。 */
+    private fun ensureScenarioEngine(): ScenarioEngine? {
+        scenarioEngine?.let { return it }
+
+        ensureRobotApi()
+        val robot = robotApi as? NuwaRobotAPI
+        if (robot == null) {
+            Log.w(TAG, "no NuwaRobotAPI instance; scenarios disabled")
+            return null
+        }
+
+        return try {
+            val sounds = soundManager ?: SoundEffectManager().also { soundManager = it }
+            val engine = ScenarioEngine(
+                robot = robot,
+                chassisManager = ChassisSafetyManager(robot) { chassisEnabled },
+                ledManager = LedManager(robot) { true },
+                soundManager = sounds,
+                isMotorEnabled = { true },
+            )
+            scenarioEngine = engine
+            Log.i(TAG, "scenario engine ready (chassis=$chassisEnabled)")
+            engine
+        } catch (t: Throwable) {
+            Log.e(TAG, "failed to build scenario engine", t)
+            null
+        }
+    }
+
     // ── Robot API ──────────────────────────────────────────────────────────────
 
     private fun ensureRobotApi() {
@@ -449,6 +558,10 @@ class MainActivity : FlutterActivity() {
     override fun onDestroy() {
         voskSpeechService?.apply { stop(); shutdown() }
         voskModel?.close()
+        scenarioEngine?.stop()
+        scenarioEngine = null
+        soundManager?.release()
+        soundManager = null
         releaseRobotApi()
         super.onDestroy()
     }

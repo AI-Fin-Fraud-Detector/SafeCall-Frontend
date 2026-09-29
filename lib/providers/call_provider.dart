@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 import 'package:permission_handler/permission_handler.dart';
 
 import '../models/call_transcript.dart';
+import '../services/robot_action_service.dart';
 import '../models/fraud_models.dart';
 import '../models/stats_record.dart';
 import '../services/fcm_service.dart';
@@ -209,14 +210,20 @@ class CallProvider extends ChangeNotifier {
 
         // Check if message already exists (avoid duplication)
         if (!_fcmMsgs.any((m) => m.id == id)) {
+          final content = msg['content'] as String? ?? '';
+          final role = msg['role'] as String? ?? 'user';
           _fcmMsgs.add(_FcmMsg(
             id: id,
-            content: msg['content'] as String? ?? '',
-            role: msg['role'] as String? ?? 'user',
+            content: content,
+            role: role,
             receivedAt: receivedAt,
           ));
           // Sort by timestamp to maintain chronological order
           _fcmMsgs.sort((a, b) => a.receivedAt.compareTo(b.receivedAt));
+          // 'user' 是來電者，也就是測試時扮演詐騙者的人
+          if (role == 'user') {
+            RobotActionService.reactToCaller(content);
+          }
         }
         notifyListeners();
 
@@ -247,6 +254,7 @@ class CallProvider extends ChangeNotifier {
         if (_conversationId != null && convId != _conversationId) return;
         _isFraudAlert = true;
         _applySsciPayload(data['ssci']);
+        RobotActionService.onFraudAlert();
 
         final topLevelProbability =
             (data['scam_probability'] as num?)?.toDouble();
@@ -262,6 +270,7 @@ class CallProvider extends ChangeNotifier {
         if (_conversationId != null && convId != _conversationId) return;
         _isSafeToAnswer = true;
         _applySsciPayload(data['ssci']);
+        RobotActionService.onSafeToAnswer();
 
         final topLevelProbability =
             (data['scam_probability'] as num?)?.toDouble();
