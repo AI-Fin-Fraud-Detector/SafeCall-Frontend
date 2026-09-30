@@ -10,7 +10,7 @@ import '../di/service_locator.dart';
 import '../services/api_service.dart';
 import '../services/audio_service.dart';
 import '../services/kebbi_service.dart';
-import '../services/web_speech_service.dart';
+import '../services/speech_service.dart';
 
 class ButlerChatPage extends StatefulWidget {
   const ButlerChatPage({super.key});
@@ -37,13 +37,15 @@ class _ButlerChatPageState extends State<ButlerChatPage> {
   // true → auto-send on final result; false → manual stop, fill text only
   bool _autoSendOnResult = false;
 
-  // STT backend: null = not yet detected, true = Kebbi NuwaSDK, false = Vosk
-  bool? _useKebbi;
+  // Extra wait after a final STT result before treating the user as done
+  // speaking; any new speech in this window keeps the turn open.
+  static const _endOfSpeechGrace = Duration(seconds: 1);
+  Timer? _endOfSpeechTimer;
+  String _pendingFinalText = '';
 
-  // Vosk model state
-  bool _voskModelReady = false;
-  // null = idle, -1 = extracting, 0-100 = download %
-  int? _voskDownloadProgress;
+  // STT backend: null = not yet detected, true = Kebbi NuwaSDK,
+  // false = speech_to_text (always false on web)
+  bool? _useKebbi;
 
   // Microphone permission state
   bool _micPermissionGranted = false;
@@ -58,15 +60,8 @@ class _ButlerChatPageState extends State<ButlerChatPage> {
     AudioService.I.init();
     KebbiService.setupCallbackHandler();
     KebbiService.setSTTCallback(_onSTTResult);
-    KebbiService.setVoskProgressCallback(_onVoskProgress);
+    SpeechService.I.setCallback(_onSTTResult);
 
-    // Web: initialize WebSpeechService callback
-    if (kIsWeb) {
-      WebSpeechService.I.setCallback(_onSTTResult);
-    }
-
-    // Pre-check if the model is already on disk (instant, no download UI)
-    _checkVoskModelCached();
     // Request microphone permission proactively
     _checkMicPermission();
   }
@@ -96,23 +91,12 @@ class _ButlerChatPageState extends State<ButlerChatPage> {
     await openAppSettings();
   }
 
-  Future<void> _checkVoskModelCached() async {
-    final ready = await KebbiService.isVoskModelReady();
-    if (mounted && ready) setState(() => _voskModelReady = true);
-  }
-
   @override
   void dispose() {
+    _endOfSpeechTimer?.cancel();
     KebbiService.setSTTCallback(null);
-    KebbiService.setVoskProgressCallback(null);
-    if (kIsWeb) {
-      WebSpeechService.I.stopListening();
-      WebSpeechService.I.setCallback(null);
-    } else if (_useKebbi == true) {
-      KebbiService.stopSTT();
-    } else if (_useKebbi == false) {
-      KebbiService.stopVoskSTT();
-    }
+    _stopListening();
+    SpeechService.I.setCallback(null);
     _textController.dispose();
     _scrollCtrl.dispose();
     super.dispose();
@@ -123,63 +107,81 @@ class _ButlerChatPageState extends State<ButlerChatPage> {
   void _onSTTResult(String text, bool isFinal) {
     if (!mounted) return;
 
-    if (isFinal) {
+    if (isFinal && text.isNotEmpty) {
+      // A backend may emit a new final per utterance or resend the
+      // cumulative transcript.
+      _pendingFinalText =
+          _pendingFinalText.isEmpty || text.startsWith(_pendingFinalText)
+              ? text
+              : '$_pendingFinalText $text';
+      _endOfSpeechTimer?.cancel();
+      _endOfSpeechTimer = Timer(_endOfSpeechGrace, _commitFinalResult);
       setState(() {
-        _isRecording = false;
-        _liveTranscript = text.isNotEmpty ? text : 'No speech detected.';
-        if (text.isNotEmpty) _textController.text = text;
+        _liveTranscript = _pendingFinalText;
+        _textController.text = _pendingFinalText;
       });
+      return;
+    }
 
-      if (_autoSendOnResult && text.isNotEmpty) {
-        _autoSendOnResult = false;
-        _sendText();
-      } else {
-        _autoSendOnResult = false;
+    if (isFinal) {
+      // Empty final (silence / error / timeout): commit whatever we have.
+      if (_pendingFinalText.isNotEmpty) {
+        _endOfSpeechTimer?.cancel();
+        _commitFinalResult();
+        return;
       }
+      _handleFinalResult(text);
     } else {
+      // Still talking: hold off committing the previous final.
+      _endOfSpeechTimer?.cancel();
+      _endOfSpeechTimer = null;
+      final prefix = _pendingFinalText.isEmpty ? '' : '$_pendingFinalText ';
       setState(() {
-        _liveTranscript = text.isNotEmpty ? text : 'Listening…';
+        _liveTranscript = text.isNotEmpty ? '$prefix$text' : 'Listening…';
       });
     }
   }
 
-  void _onVoskProgress(int percent) {
-    if (!mounted) return;
+  void _commitFinalResult() {
+    _endOfSpeechTimer = null;
+    final text = _pendingFinalText;
+    _pendingFinalText = '';
+    if (mounted) _handleFinalResult(text);
+  }
+
+  void _resetPendingFinal() {
+    _endOfSpeechTimer?.cancel();
+    _endOfSpeechTimer = null;
+    _pendingFinalText = '';
+  }
+
+  void _handleFinalResult(String text) {
     setState(() {
-      _voskDownloadProgress = percent;
-      _liveTranscript = percent == -1
-          ? 'Extracting model…'
-          : 'Downloading voice model… $percent%';
+      _isRecording = false;
+      _liveTranscript = text.isNotEmpty ? text : 'No speech detected.';
+      if (text.isNotEmpty) _textController.text = text;
     });
+
+    if (_autoSendOnResult && text.isNotEmpty) {
+      _autoSendOnResult = false;
+      _sendText();
+    } else {
+      _autoSendOnResult = false;
+    }
   }
 
   // ── Recording toggle ──────────────────────────────────────────────────────
 
-  Future<void> _startSTT() async {
-    // Web: use Web Speech API
-    if (kIsWeb) {
-      final ok = await WebSpeechService.I.startListening();
-      if (!ok) {
-        if (mounted) {
-          setState(() {
-            _isBusy = false;
-            _liveTranscript = 'Web speech not available';
-          });
-        }
-        return;
-      }
-      if (!mounted) return;
-      setState(() {
-        _isBusy = false;
-        _isRecording = true;
-        _liveTranscript = 'Listening…';
-        _textController.clear();
-      });
-      _autoSendOnResult = true;
-      return;
+  Future<void> _stopListening() async {
+    if (_useKebbi == true) {
+      await KebbiService.stopSTT();
+    } else {
+      await SpeechService.I.stopListening();
     }
+  }
 
-    // Android: use Kebbi or Vosk
+  Future<void> _startSTT() async {
+    // Android: prefer Kebbi's NuwaSDK STT when running on the robot
     _useKebbi ??= await KebbiService.isKebbiAvailable();
 
     if (_useKebbi!) {
@@ -195,53 +197,41 @@ class _ButlerChatPageState extends State<ButlerChatPage> {
         return;
       }
     } else {
-      if (!_voskModelReady) {
-        setState(() {
-          _voskDownloadProgress = 0;
-          _liveTranscript = 'Preparing voice model…';
-        });
-
-        try {
-          await KebbiService.initVosk();
-          setState(() {
-            _voskModelReady = true;
-            _voskDownloadProgress = null;
-          });
-        } catch (e) {
+      if (!kIsWeb) {
+        final micStatus = await Permission.microphone.request();
+        if (!micStatus.isGranted) {
           if (mounted) {
+            final isPermanentlyDenied =
+                await Permission.microphone.isPermanentlyDenied;
             setState(() {
               _isBusy = false;
-              _voskDownloadProgress = null;
-              _liveTranscript = 'Model download failed: $e';
+              _micPermissionGranted = false;
+              _isPermanentlyDenied = isPermanentlyDenied;
+              _liveTranscript = isPermanentlyDenied
+                  ? 'Microphone permission denied. Tap settings icon to open Settings.'
+                  : 'Microphone permission is required.';
             });
           }
           return;
         }
+        _micPermissionGranted = true;
+        _isPermanentlyDenied = false;
       }
 
-      final micStatus = await Permission.microphone.request();
-      if (!micStatus.isGranted) {
+      final ok = await SpeechService.I.startListening();
+      if (!ok) {
         if (mounted) {
-          final isPermanentlyDenied =
-              await Permission.microphone.isPermanentlyDenied;
           setState(() {
             _isBusy = false;
-            _micPermissionGranted = false;
-            _isPermanentlyDenied = isPermanentlyDenied;
-            _liveTranscript = isPermanentlyDenied
-                ? 'Microphone permission denied. Tap settings icon to open Settings.'
-                : 'Microphone permission is required.';
+            _liveTranscript = 'Speech recognition not available';
           });
         }
         return;
       }
-      _micPermissionGranted = true;
-      _isPermanentlyDenied = false;
-
-      await KebbiService.startVoskSTT();
     }
 
     if (!mounted) return;
+    _resetPendingFinal();
     setState(() {
       _isBusy = false;
       _isRecording = true;
@@ -256,15 +246,8 @@ class _ButlerChatPageState extends State<ButlerChatPage> {
 
     if (_isRecording) {
       _autoSendOnResult = false;
-
-      // Web: stop WebSpeechService
-      if (kIsWeb) {
-        await WebSpeechService.I.stopListening();
-      } else if (_useKebbi == true) {
-        await KebbiService.stopSTT();
-      } else {
-        await KebbiService.stopVoskSTT();
-      }
+      _resetPendingFinal();
+      await _stopListening();
 
       setState(() {
         _isRecording = false;
@@ -313,13 +296,8 @@ class _ButlerChatPageState extends State<ButlerChatPage> {
     if (txt.isEmpty || _isLoading) return;
 
     // Stop STT - don't listen while processing response
-    if (kIsWeb) {
-      await WebSpeechService.I.stopListening();
-    } else if (_useKebbi == true) {
-      await KebbiService.stopSTT();
-    } else if (_useKebbi == false) {
-      await KebbiService.stopVoskSTT();
-    }
+    _resetPendingFinal();
+    await _stopListening();
 
     setState(() {
       _messages.add(_ChatMessage(
@@ -437,25 +415,6 @@ class _ButlerChatPageState extends State<ButlerChatPage> {
                     const SizedBox(height: 8),
                     FakeSiriWave(active: _isRecording),
                     const SizedBox(height: 10),
-
-                    // Download progress bar (Vosk model)
-                    if (_voskDownloadProgress != null &&
-                        _voskDownloadProgress! >= 0) ...[
-                      Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 20),
-                        child: ClipRRect(
-                          borderRadius: BorderRadius.circular(4),
-                          child: LinearProgressIndicator(
-                            value: _voskDownloadProgress! / 100,
-                            minHeight: 6,
-                            backgroundColor: Colors.white24,
-                            valueColor: const AlwaysStoppedAnimation<Color>(
-                                Color(0xff29d97a)),
-                          ),
-                        ),
-                      ),
-                      const SizedBox(height: 6),
-                    ],
 
                     Padding(
                       padding: const EdgeInsets.symmetric(horizontal: 16),
