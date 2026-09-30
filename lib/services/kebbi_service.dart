@@ -5,6 +5,28 @@ import 'package:flutter/services.dart';
 typedef STTResultCallback = void Function(String text, bool isFinal);
 typedef VoskProgressCallback = void Function(int percent);
 
+/// 對應 ScenarioRepository.kt，兩邊要同步。
+class KebbiScenario {
+  KebbiScenario._();
+
+  // 管家
+  static const welcome = 'butler_welcome';
+  static const guide = 'butler_guide';
+  static const thinking = 'butler_thinking';
+  static const celebrate = 'butler_celebrate';
+  static const farewell = 'butler_farewell';
+
+  // 詐騙警告
+  static const physicalBlock = 'fraud_physical_block';
+  static const panic = 'fraud_panic';
+  static const accuse = 'fraud_accuse';
+  static const reject = 'fraud_reject';
+  static const siren = 'fraud_siren';
+
+  /// 全部動作跑一遍，用來確認硬體正常。
+  static const fullDemo = 'mega_demo_60s';
+}
+
 class KebbiService {
   static const MethodChannel _ch = MethodChannel('kebbi');
 
@@ -185,6 +207,55 @@ class KebbiService {
       DebugLogger.I.log('[Kebbi] safe error: ${e.code} ${e.message}');
     } catch (e) {
       DebugLogger.I.log('[Kebbi] safe error: $e');
+    }
+  }
+
+  /// 回傳 false 表示沒播：不在凱比上，或已經有動作在播。不會丟例外。
+  static Future<bool> playScenario(String id) async {
+    if (!_isAndroidNative) return false;
+    try {
+      final started =
+          await _ch.invokeMethod<bool>('playScenario', {'id': id});
+      return started ?? false;
+    } on MissingPluginException {
+      DebugLogger.I.log('[Kebbi] playScenario skipped: channel not registered.');
+      return false;
+    } on PlatformException catch (e) {
+      DebugLogger.I.log('[Kebbi] playScenario($id) error: ${e.code} ${e.message}');
+      return false;
+    } catch (e) {
+      DebugLogger.I.log('[Kebbi] playScenario($id) error: $e');
+      return false;
+    }
+  }
+
+  /// 停止播放並復原硬體。
+  static Future<void> stopScenario() async {
+    if (!_isAndroidNative) return;
+    try {
+      await _ch.invokeMethod<void>('stopScenario');
+    } catch (e) {
+      DebugLogger.I.log('[Kebbi] stopScenario error: $e');
+    }
+  }
+
+  static Future<bool> isScenarioPlaying() async {
+    if (!_isAndroidNative) return false;
+    try {
+      return await _ch.invokeMethod<bool>('isScenarioPlaying') ?? false;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  /// 預設關閉。動作會讓凱比以約 0.3 m/s 移動，放在桌上會掉下去。
+  /// 手臂、燈光、音效不受影響。
+  static Future<void> setChassisEnabled(bool enabled) async {
+    if (!_isAndroidNative) return;
+    try {
+      await _ch.invokeMethod<bool>('setChassisEnabled', {'enabled': enabled});
+    } catch (e) {
+      DebugLogger.I.log('[Kebbi] setChassisEnabled error: $e');
     }
   }
 
