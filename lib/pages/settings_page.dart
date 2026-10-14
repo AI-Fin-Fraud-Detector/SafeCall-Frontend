@@ -74,8 +74,17 @@ class _SettingsPageState extends State<SettingsPage> {
 
       if (!mounted) return;
 
+      // Cancel / expiry can close the dialog while a status poll is in flight,
+      // so the binding may have completed anyway: re-check before reporting.
+      var bindingCompleted = bound == true;
+      if (!bindingCompleted) {
+        await _loadLineStatus();
+        if (!mounted) return;
+        bindingCompleted = _lineBound;
+      }
+
       setState(() {
-        if (bound == true) {
+        if (bindingCompleted) {
           _lineBound = true;
           _message = 'LINE account connected.';
         } else {
