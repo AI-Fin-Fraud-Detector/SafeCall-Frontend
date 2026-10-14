@@ -10,7 +10,7 @@ on:
 jobs:
   # ── Compute release tag ───────────────────────────────────────────────────────
   version:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     outputs:
       tag: ${{ steps.tag.outputs.tag }}
       app_name: ${{ steps.tag.outputs.app_name }}
@@ -26,7 +26,7 @@ jobs:
   # ── Android APK (release-signed) ──────────────────────────────────────────────
   build-android:
     needs: version
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
 
@@ -92,7 +92,7 @@ jobs:
   # ── Web Build ───────────────────────────────────────────────────────────────────
   build-web:
     needs: version
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
 
@@ -120,7 +120,7 @@ jobs:
   release:
     if: github.event_name == 'push'
     needs: [version, build-android, build-ios, build-web]
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     permissions:
       contents: write
     steps:
