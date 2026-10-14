@@ -17,9 +17,9 @@ class MenuPage extends StatefulWidget {
 }
 
 class _MenuPageState extends State<MenuPage> {
-  static const _icons  = [Icons.contacts, Icons.history, Icons.fastfood, Icons.support_agent];
-  static const _labels = ['Contacts', 'Call History', 'Food Recognition', 'Butler'];
-  static const _routes = ['/contacts', '/conversations', '/food', '/butler'];
+  static const _icons  = [Icons.contacts, Icons.history, Icons.fastfood, Icons.support_agent, Icons.settings];
+  static const _labels = ['Contacts', 'Call History', 'Food Recognition', 'Butler', 'Settings'];
+  static const _routes = ['/contacts', '/conversations', '/food', '/butler', '/settings'];
 
   Timer? _callTimer;
 

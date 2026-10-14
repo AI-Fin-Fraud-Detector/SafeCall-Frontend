@@ -14,7 +14,6 @@ import 'services/debug_logger.dart';
 import 'services/fcm_service.dart';
 import 'services/kebbi_service.dart';
 import 'services/permissions_service.dart';
-import 'services/permissions_service.dart';
 import 'widgets/auth_guard.dart';
 
 import 'pages/welcome_page.dart';
@@ -26,6 +25,7 @@ import 'pages/food_recognition_page.dart';
 import 'pages/butler_chat_page.dart';
 import 'pages/contacts_page.dart';
 import 'pages/conversations_page.dart';
+import 'pages/settings_page.dart';
 
 /// 全域 NavigatorKey — 供 FcmService 在 widget tree 外部導航使用
 final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
@@ -252,6 +252,7 @@ class MyApp extends StatelessWidget {
         '/stats': (context) => const AuthGuard(child: StatsPage()),
         '/food': (_) => const FoodRecognitionPage(),
         '/butler': (_) => const ButlerChatPage(),
+        '/settings': (_) => const SettingsPage(),
       },
     );
   }
