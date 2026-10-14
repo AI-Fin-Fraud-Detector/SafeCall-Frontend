@@ -41,8 +41,38 @@ jobs:
           flutter-version: 3.47.2
           cache: true
 
+      # The secret is unavailable on PRs from forks and may simply not be set.
+      # Warn (job stays green) and write a placeholder so the build still runs:
+      # without it :app:processReleaseGoogleServices fails with "Malformed root json".
+      # A placeholder APK builds fine, but Firebase / FCM will not work in it.
       - name: Write google-services.json
-        run: echo '${{ secrets.GOOGLE_SERVICES_JSON }}' > android/app/google-services.json
+        env:
+          GOOGLE_SERVICES_JSON: ${{ secrets.GOOGLE_SERVICES_JSON }}
+        run: |
+          if [ -z "${GOOGLE_SERVICES_JSON//[[:space:]]/}" ]; then
+            echo "::warning title=google-services.json not found::Secret GOOGLE_SERVICES_JSON is empty or unavailable. Building with a placeholder google-services.json; Firebase/FCM will not work in this APK."
+            cat > android/app/google-services.json <<'JSON'
+          {
+            "project_info": {
+              "project_number": "000000000000",
+              "project_id": "placeholder",
+              "storage_bucket": "placeholder.appspot.com"
+            },
+            "client": [
+              {
+                "client_info": {
+                  "mobilesdk_app_id": "1:000000000000:android:0000000000000000",
+                  "android_client_info": { "package_name": "tw.futuremedialab.frauddetect" }
+                },
+                "api_key": [{ "current_key": "placeholder" }]
+              }
+            ],
+            "configuration_version": "1"
+          }
+          JSON
+          else
+            printf '%s' "$GOOGLE_SERVICES_JSON" > android/app/google-services.json
+          fi
 
       - run: flutter pub get
       - run: flutter build apk --release
