@@ -3,33 +3,35 @@ import 'package:flutter/foundation.dart';
 import 'package:speech_to_text/speech_to_text.dart';
 import 'package:speech_to_text/speech_recognition_result.dart';
 
-typedef WebSTTCallback = void Function(String text, bool isFinal);
+typedef STTCallback = void Function(String text, bool isFinal);
 
-class WebSpeechService {
-  static final WebSpeechService I = WebSpeechService._();
+/// Platform speech recognition via the speech_to_text package
+/// (Web Speech API on web, Android SpeechRecognizer on Android).
+class SpeechService {
+  static final SpeechService I = SpeechService._();
 
   final SpeechToText _speech = SpeechToText();
   bool _initialized = false;
-  WebSTTCallback? _callback;
+  STTCallback? _callback;
 
-  WebSpeechService._();
+  SpeechService._();
 
   Future<bool> initialize() async {
     if (_initialized) return true;
     _initialized = await _speech.initialize(
       onStatus: (status) {
-        DebugLogger.I.log('[WebSpeech] Status: $status');
+        DebugLogger.I.log('[Speech] Status: $status');
       },
       onError: (error) {
-        DebugLogger.I.log('[WebSpeech] Error: $error');
+        DebugLogger.I.log('[Speech] Error: $error');
         _callback?.call('', true);
       },
     );
-    DebugLogger.I.log('[WebSpeech] Initialized: $_initialized');
+    DebugLogger.I.log('[Speech] Initialized: $_initialized');
     return _initialized;
   }
 
-  void setCallback(WebSTTCallback? cb) {
+  void setCallback(STTCallback? cb) {
     _callback = cb;
   }
 
@@ -46,7 +48,7 @@ class WebSpeechService {
         _callback?.call(text, isFinal);
       },
       listenFor: const Duration(seconds: 30),
-      pauseFor: const Duration(seconds: 3),
+      pauseFor: const Duration(seconds: 4),
       localeId: 'en_US',
       listenOptions: SpeechListenOptions(
         cancelOnError: true,

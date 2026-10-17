@@ -1,0 +1,36 @@
+name: safecall
+
+services:
+  flutter:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: safecall-flutter-android:3.47.2
+    container_name: safecall-flutter
+    # Android build-tools (aapt2) only ship for x86_64 Linux; runs via Rosetta on Apple Silicon.
+    platform: linux/amd64
+    restart: unless-stopped
+    working_dir: /workspace
+    volumes:
+      - ..:/workspace
+      # Keep container-specific state out of the host checkout so host and
+      # container builds don't clobber each other's absolute paths.
+      - dart-tool:/workspace/.dart_tool
+      - android-gradle:/workspace/android/.gradle
+      - android-kotlin:/workspace/android/.kotlin
+      # Persistent caches
+      - pub-cache:/root/.pub-cache
+      - gradle-cache:/root/.gradle
+      - ./gradle.properties:/root/.gradle/gradle.properties:ro
+      # Debug keystore, so it survives container recreation
+      - android-home:/root/.android
+      # Firebase config (kept outside the repo)
+      - ${GOOGLE_SERVICES_JSON:-../../../SafeCall_creds/main_app_creds/google-services.json}:/workspace/android/app/google-services.json:ro
+
+volumes:
+  dart-tool:
+  android-gradle:
+  android-kotlin:
+  pub-cache:
+  gradle-cache:
+  android-home:

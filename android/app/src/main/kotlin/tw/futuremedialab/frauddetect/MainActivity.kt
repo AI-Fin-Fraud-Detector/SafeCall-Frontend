@@ -8,15 +8,6 @@ import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
 import com.nuwarobotics.service.agent.NuwaRobotAPI
-import org.vosk.Model
-import org.vosk.Recognizer
-import org.vosk.android.RecognitionListener
-import org.vosk.android.SpeechService
-import java.io.File
-import java.io.FileOutputStream
-import java.net.HttpURLConnection
-import java.net.URL
-import java.util.zip.ZipInputStream
 import tw.futuremedialab.frauddetect.kebbi.ChassisSafetyManager
 import tw.futuremedialab.frauddetect.kebbi.LedManager
 import tw.futuremedialab.frauddetect.kebbi.ScenarioEngine
@@ -35,9 +26,6 @@ class MainActivity : FlutterActivity() {
         // 預設關閉。動作會讓機器人以約 0.3 m/s 移動，放在桌上會掉下去。
         // Flutter 端用 setChassisEnabled 開啟。
         private const val CHASSIS_ENABLED_BY_DEFAULT = false
-        private const val VOSK_MODEL_NAME = "vosk-model-small-en-us-0.15"
-        private const val VOSK_MODEL_URL =
-            "https://alphacephei.com/vosk/models/vosk-model-small-en-us-0.15.zip"
     }
 
     private var robotApi: Any? = null
@@ -48,11 +36,6 @@ class MainActivity : FlutterActivity() {
     private var scenarioEngine: ScenarioEngine? = null
     private var soundManager: SoundEffectManager? = null
     @Volatile private var chassisEnabled = CHASSIS_ENABLED_BY_DEFAULT
-
-    // Vosk
-    private var voskModel: Model? = null
-    private var voskSpeechService: SpeechService? = null
-    @Volatile private var voskDownloading = false
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
@@ -160,36 +143,6 @@ class MainActivity : FlutterActivity() {
                     }
                 }
 
-                // ── Vosk ──────────────────────────────────────────────────────────
-
-                "checkVoskModel" -> {
-                    val modelDir = File(filesDir, VOSK_MODEL_NAME)
-                    result.success(modelDir.exists() && modelDir.isDirectory)
-                }
-
-                "initVosk" -> {
-                    initVosk(result)
-                }
-
-                "startVoskSTT" -> {
-                    try {
-                        startVoskSTT()
-                        result.success(null)
-                    } catch (t: Throwable) {
-                        Log.e(TAG, "startVoskSTT error", t)
-                        result.error("VOSK_STT_FAIL", t.message, null)
-                    }
-                }
-
-                "stopVoskSTT" -> {
-                    try {
-                        stopVoskSTT()
-                        result.success(null)
-                    } catch (t: Throwable) {
-                        result.error("VOSK_STOP_FAIL", t.message, null)
-                    }
-                }
-
                 else -> result.notImplemented()
             }
         }
@@ -257,180 +210,6 @@ class MainActivity : FlutterActivity() {
         } catch (t: Throwable) {
             Log.w(TAG, "stopListen failed: ${t.message}")
         }
-    }
-
-    // ── Vosk offline STT ───────────────────────────────────────────────────────
-
-    private fun initVosk(result: MethodChannel.Result) {
-        val modelDir = File(filesDir, VOSK_MODEL_NAME)
-
-        if (modelDir.exists() && modelDir.isDirectory) {
-            // Already on disk — just load
-            Thread {
-                try {
-                    if (voskModel == null) {
-                        voskModel = Model(modelDir.absolutePath)
-                    }
-                    Log.d(TAG, "Vosk model loaded from cache")
-                    mainHandler.post { result.success(null) }
-                } catch (e: Exception) {
-                    Log.e(TAG, "Vosk model load error", e)
-                    mainHandler.post { result.error("VOSK_LOAD_FAIL", e.message, null) }
-                }
-            }.start()
-            return
-        }
-
-        // Guard against concurrent downloads
-        if (voskDownloading) {
-            result.error("VOSK_BUSY", "Model is already downloading", null)
-            return
-        }
-        voskDownloading = true
-
-        // Download → unzip → load
-        Thread {
-            val zipFile = File(cacheDir, "$VOSK_MODEL_NAME.zip")
-            try {
-                // ── Download ─────────────────────────────────────────
-                Log.d(TAG, "Downloading Vosk model from $VOSK_MODEL_URL")
-                val conn = URL(VOSK_MODEL_URL).openConnection() as HttpURLConnection
-                conn.connectTimeout = 15_000
-                conn.readTimeout = 60_000
-                conn.connect()
-                val total = conn.contentLength.toLong()
-                Log.d(TAG, "Vosk model size: $total bytes")
-
-                FileOutputStream(zipFile).use { fos ->
-                    conn.inputStream.use { input ->
-                        val buf = ByteArray(16_384)
-                        var downloaded = 0L
-                        var lastProgress = -1
-                        var n: Int
-                        while (input.read(buf).also { n = it } != -1) {
-                            fos.write(buf, 0, n)
-                            downloaded += n
-                            if (total > 0) {
-                                val progress = (downloaded * 100 / total).toInt()
-                                if (progress != lastProgress) {
-                                    lastProgress = progress
-                                    mainHandler.post {
-                                        methodChannel?.invokeMethod("onVoskProgress", progress)
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-
-                // ── Unzip ─────────────────────────────────────────────
-                Log.d(TAG, "Extracting Vosk model…")
-                mainHandler.post { methodChannel?.invokeMethod("onVoskProgress", -1) }
-                unzip(zipFile, filesDir)
-                zipFile.delete()
-                Log.d(TAG, "Vosk model extracted")
-
-                // ── Load ──────────────────────────────────────────────
-                voskModel = Model(File(filesDir, VOSK_MODEL_NAME).absolutePath)
-                Log.d(TAG, "Vosk model loaded successfully")
-                voskDownloading = false
-                mainHandler.post { result.success(null) }
-
-            } catch (e: Exception) {
-                Log.e(TAG, "initVosk failed", e)
-                zipFile.delete()
-                voskDownloading = false
-                mainHandler.post { result.error("VOSK_INIT_FAIL", e.message, null) }
-            }
-        }.start()
-    }
-
-    private fun startVoskSTT() {
-        val model = voskModel ?: throw IllegalStateException("Vosk model not loaded")
-
-        voskSpeechService?.apply { stop(); shutdown() }
-        voskSpeechService = null
-
-        val recognizer = Recognizer(model, 16000.0f)
-        val service = SpeechService(recognizer, 16000.0f)
-        voskSpeechService = service
-
-        service.startListening(object : RecognitionListener {
-            override fun onPartialResult(hypothesis: String?) {
-                val text = parseVoskJson(hypothesis, "partial") ?: return
-                if (text.isBlank()) return
-                mainHandler.post {
-                    methodChannel?.invokeMethod(
-                        "onSTTResult", mapOf("text" to text, "isFinal" to false)
-                    )
-                }
-            }
-
-            override fun onResult(hypothesis: String?) {
-                val text = parseVoskJson(hypothesis, "text") ?: ""
-                mainHandler.post {
-                    methodChannel?.invokeMethod(
-                        "onSTTResult", mapOf("text" to text, "isFinal" to true)
-                    )
-                }
-            }
-
-            override fun onFinalResult(hypothesis: String?) {
-                val text = parseVoskJson(hypothesis, "text") ?: ""
-                mainHandler.post {
-                    methodChannel?.invokeMethod(
-                        "onSTTResult", mapOf("text" to text, "isFinal" to true)
-                    )
-                }
-            }
-
-            override fun onError(exception: Exception?) {
-                Log.e(TAG, "Vosk recognition error", exception)
-                mainHandler.post {
-                    methodChannel?.invokeMethod(
-                        "onSTTResult", mapOf("text" to "", "isFinal" to true)
-                    )
-                }
-            }
-
-            override fun onTimeout() {
-                mainHandler.post {
-                    methodChannel?.invokeMethod(
-                        "onSTTResult", mapOf("text" to "", "isFinal" to true)
-                    )
-                }
-            }
-        })
-        Log.d(TAG, "Vosk STT started")
-    }
-
-    private fun stopVoskSTT() {
-        voskSpeechService?.apply { stop(); shutdown() }
-        voskSpeechService = null
-        Log.d(TAG, "Vosk STT stopped")
-    }
-
-    private fun unzip(zipFile: File, destDir: File) {
-        ZipInputStream(zipFile.inputStream()).use { zis ->
-            var entry = zis.nextEntry
-            while (entry != null) {
-                val outFile = File(destDir, entry.name)
-                if (entry.isDirectory) {
-                    outFile.mkdirs()
-                } else {
-                    outFile.parentFile?.mkdirs()
-                    FileOutputStream(outFile).use { fos -> zis.copyTo(fos) }
-                }
-                zis.closeEntry()
-                entry = zis.nextEntry
-            }
-        }
-    }
-
-    /** Simple regex-based JSON field extractor for Vosk output. */
-    private fun parseVoskJson(json: String?, key: String): String? {
-        if (json == null) return null
-        return "\"$key\"\\s*:\\s*\"([^\"]*)\"".toRegex().find(json)?.groupValues?.getOrNull(1)
     }
 
     /** 回傳 false 表示已經有動作在播。引擎建不起來時退回原本的舉右手。 */
@@ -556,8 +335,6 @@ class MainActivity : FlutterActivity() {
     }
 
     override fun onDestroy() {
-        voskSpeechService?.apply { stop(); shutdown() }
-        voskModel?.close()
         scenarioEngine?.stop()
         scenarioEngine = null
         soundManager?.release()

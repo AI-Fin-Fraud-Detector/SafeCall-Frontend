@@ -3,7 +3,6 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 
 typedef STTResultCallback = void Function(String text, bool isFinal);
-typedef VoskProgressCallback = void Function(int percent);
 
 /// 對應 ScenarioRepository.kt，兩邊要同步。
 class KebbiScenario {
@@ -36,27 +35,19 @@ class KebbiService {
   // STT result callback — set by ButlerChatPage
   static STTResultCallback? _sttCallback;
 
-  // Vosk download progress callback — set by ButlerChatPage
-  static VoskProgressCallback? _voskProgressCallback;
-
   /// Wire up incoming method calls from native.
-  /// Must be called once before using STT or Vosk.
+  /// Must be called once before using STT.
   static void setupCallbackHandler() {
     _ch.setMethodCallHandler((call) async {
       if (call.method == 'onSTTResult') {
         final text = (call.arguments as Map)['text'] as String? ?? '';
         final isFinal = (call.arguments as Map)['isFinal'] as bool? ?? true;
         _sttCallback?.call(text, isFinal);
-      } else if (call.method == 'onVoskProgress') {
-        final percent = call.arguments as int? ?? 0;
-        _voskProgressCallback?.call(percent);
       }
     });
   }
 
   static void setSTTCallback(STTResultCallback? cb) => _sttCallback = cb;
-  static void setVoskProgressCallback(VoskProgressCallback? cb) =>
-      _voskProgressCallback = cb;
 
   // ── Kebbi detection ────────────────────────────────────────────────────────
 
@@ -118,67 +109,6 @@ class KebbiService {
       DebugLogger.I.log('[Kebbi] stopSTT error: ${e.code} ${e.message}');
     } catch (e) {
       DebugLogger.I.log('[Kebbi] stopSTT error: $e');
-    }
-  }
-
-  // ── Vosk offline STT ───────────────────────────────────────────────────────
-
-  /// Returns true if the Vosk model has already been downloaded.
-  static Future<bool> isVoskModelReady() async {
-    if (!_isAndroidNative) return false;
-    try {
-      final result = await _ch.invokeMethod<bool>('checkVoskModel');
-      return result ?? false;
-    } catch (_) {
-      return false;
-    }
-  }
-
-  /// Download (if needed) + load the Vosk model.
-  /// Progress is reported via [setVoskProgressCallback]:
-  ///   0–100 = download %, -1 = extracting.
-  /// Throws on failure.
-  static Future<void> initVosk() async {
-    if (!_isAndroidNative) return;
-    try {
-      await _ch.invokeMethod<void>('initVosk');
-    } on PlatformException catch (e) {
-      DebugLogger.I.log('[Kebbi] initVosk error: ${e.code} ${e.message}');
-      rethrow;
-    } catch (e) {
-      DebugLogger.I.log('[Kebbi] initVosk error: $e');
-      rethrow;
-    }
-  }
-
-  static Future<void> startVoskSTT() async {
-    if (!_isAndroidNative) return;
-
-    // Auto-init if model exists on disk but wasn't loaded (e.g., app restart)
-    final ready = await isVoskModelReady();
-    if (ready) {
-      try {
-        await initVosk();
-      } catch (_) {}
-    }
-
-    try {
-      await _ch.invokeMethod<void>('startVoskSTT');
-    } on PlatformException catch (e) {
-      DebugLogger.I.log('[Kebbi] startVoskSTT error: ${e.code} ${e.message}');
-      rethrow;
-    } catch (e) {
-      DebugLogger.I.log('[Kebbi] startVoskSTT error: $e');
-      rethrow;
-    }
-  }
-
-  static Future<void> stopVoskSTT() async {
-    if (!_isAndroidNative) return;
-    try {
-      await _ch.invokeMethod<void>('stopVoskSTT');
-    } catch (e) {
-      DebugLogger.I.log('[Kebbi] stopVoskSTT error: $e');
     }
   }
 

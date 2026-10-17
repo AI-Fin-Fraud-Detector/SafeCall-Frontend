@@ -48,6 +48,8 @@
 	<true/>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>This app needs microphone access for call monitoring.</string>
+	<key>NSSpeechRecognitionUsageDescription</key>
+	<string>This app uses speech recognition so you can talk to the Butler.</string>
 	<key>NSCameraUsageDescription</key>
 	<string>This app needs camera access for food recognition and photo capture.</string>
 	<key>NSLocalNetworkUsageDescription</key>
