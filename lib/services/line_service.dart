@@ -68,4 +68,13 @@ class LineService {
 
     return bound;
   }
+
+  /// 解除 LINE 綁定。
+  Future<void> unbind() async {
+    final response = await _api.dio.delete(
+      '/api/notify/line/binding',
+    );
+
+    _requireJsonMap(response, 'LINE unbind request');
+  }
 }
