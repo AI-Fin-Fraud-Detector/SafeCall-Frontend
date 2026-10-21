@@ -106,6 +106,61 @@ class _SettingsPageState extends State<SettingsPage> {
     }
   }
 
+  Future<void> _unbindLine() async {
+    if (_bindingLine) return;
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Unbind LINE'),
+        content: const Text(
+          'You will no longer receive scam alerts on LINE. Unbind?',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            child: const Text('Unbind'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true || !mounted) return;
+
+    setState(() {
+      _bindingLine = true;
+      _message = null;
+      _error = null;
+    });
+
+    try {
+      await LineService.I.unbind();
+
+      if (!mounted) return;
+
+      setState(() {
+        _lineBound = false;
+        _message = 'LINE account unbound.';
+      });
+    } catch (e) {
+      if (!mounted) return;
+
+      setState(() {
+        _error = 'LINE unbind failed: $e';
+      });
+    } finally {
+      if (mounted) {
+        setState(() {
+          _bindingLine = false;
+        });
+      }
+    }
+  }
+
   Widget _buildSettingItem({
     required IconData icon,
     required String title,
@@ -223,14 +278,16 @@ class _SettingsPageState extends State<SettingsPage> {
               subtitle: _loadingLineStatus
                   ? 'Checking LINE binding status...'
                   : _lineBound
-                      ? 'Your LINE account is connected to SafeCall'
+                      ? 'Your LINE account is connected to SafeCall. Tap to unbind'
                       : 'Connect your LINE account to SafeCall',
               loading:
                   _bindingLine || _loadingLineStatus,
               onTap:
-                  (_bindingLine || _loadingLineStatus || _lineBound)
+                  (_bindingLine || _loadingLineStatus)
                       ? null
-                      : _bindLine,
+                      : _lineBound
+                          ? _unbindLine
+                          : _bindLine,
             ),
 
             if (_message != null) ...[
