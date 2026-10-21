@@ -37,6 +37,12 @@ class _ButlerChatPageState extends State<ButlerChatPage> {
   // true → auto-send on final result; false → manual stop, fill text only
   bool _autoSendOnResult = false;
 
+  // Final STT results are held this long before ending the turn; speech that
+  // resumes within the hold is appended to the same turn.
+  static const Duration _finalHold = Duration(seconds: 1);
+  final List<String> _heldSegments = [];
+  Timer? _finalHoldTimer;
+
   // STT backend: null = not yet detected, true = Kebbi NuwaSDK, false = Vosk
   bool? _useKebbi;
 
@@ -103,6 +109,7 @@ class _ButlerChatPageState extends State<ButlerChatPage> {
 
   @override
   void dispose() {
+    _discardHeldResult();
     KebbiService.setSTTCallback(null);
     KebbiService.setVoskProgressCallback(null);
     if (kIsWeb) {
@@ -124,23 +131,59 @@ class _ButlerChatPageState extends State<ButlerChatPage> {
     if (!mounted) return;
 
     if (isFinal) {
-      setState(() {
-        _isRecording = false;
-        _liveTranscript = text.isNotEmpty ? text : 'No speech detected.';
-        if (text.isNotEmpty) _textController.text = text;
-      });
-
-      if (_autoSendOnResult && text.isNotEmpty) {
-        _autoSendOnResult = false;
-        _sendText();
-      } else {
-        _autoSendOnResult = false;
+      // Vosk reports a final result at every short pause and keeps listening,
+      // so hold it: if speech resumes within _finalHold it joins this turn.
+      if (text.isNotEmpty) _heldSegments.add(text);
+      if (_heldSegments.isEmpty) {
+        _commitFinalResult();
+        return;
       }
-    } else {
+
+      final held = _heldSegments.join(' ');
       setState(() {
-        _liveTranscript = text.isNotEmpty ? text : 'Listening…';
+        _liveTranscript = held;
+        _textController.text = held;
+      });
+      _finalHoldTimer?.cancel();
+      _finalHoldTimer = Timer(_finalHold, _commitFinalResult);
+    } else {
+      // Speech resumed: keep the turn open.
+      _finalHoldTimer?.cancel();
+      _finalHoldTimer = null;
+
+      final shown = [..._heldSegments, if (text.isNotEmpty) text].join(' ');
+      setState(() {
+        _liveTranscript = shown.isNotEmpty ? shown : 'Listening…';
       });
     }
+  }
+
+  void _commitFinalResult() {
+    _finalHoldTimer?.cancel();
+    _finalHoldTimer = null;
+    if (!mounted) return;
+
+    final text = _heldSegments.join(' ');
+    _heldSegments.clear();
+
+    setState(() {
+      _isRecording = false;
+      _liveTranscript = text.isNotEmpty ? text : 'No speech detected.';
+      if (text.isNotEmpty) _textController.text = text;
+    });
+
+    if (_autoSendOnResult && text.isNotEmpty) {
+      _autoSendOnResult = false;
+      _sendText();
+    } else {
+      _autoSendOnResult = false;
+    }
+  }
+
+  void _discardHeldResult() {
+    _finalHoldTimer?.cancel();
+    _finalHoldTimer = null;
+    _heldSegments.clear();
   }
 
   void _onVoskProgress(int percent) {
@@ -156,6 +199,8 @@ class _ButlerChatPageState extends State<ButlerChatPage> {
   // ── Recording toggle ──────────────────────────────────────────────────────
 
   Future<void> _startSTT() async {
+    _discardHeldResult();
+
     // Web: use Web Speech API
     if (kIsWeb) {
       final ok = await WebSpeechService.I.startListening();
@@ -256,6 +301,8 @@ class _ButlerChatPageState extends State<ButlerChatPage> {
 
     if (_isRecording) {
       _autoSendOnResult = false;
+      // Held text is already in _textController; keep it but end the turn.
+      _discardHeldResult();
 
       // Web: stop WebSpeechService
       if (kIsWeb) {
@@ -311,6 +358,8 @@ class _ButlerChatPageState extends State<ButlerChatPage> {
   Future<void> _sendText() async {
     final txt = _textController.text.trim();
     if (txt.isEmpty || _isLoading) return;
+
+    _discardHeldResult();
 
     // Stop STT - don't listen while processing response
     if (kIsWeb) {
