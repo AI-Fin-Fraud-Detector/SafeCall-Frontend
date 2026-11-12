@@ -22,6 +22,7 @@ import java.net.HttpURLConnection
 import java.net.URL
 import java.util.zip.ZipInputStream
 import tw.futuremedialab.frauddetect.kebbi.ChassisSafetyManager
+import tw.futuremedialab.frauddetect.kebbi.FaceController
 import tw.futuremedialab.frauddetect.kebbi.LedManager
 import tw.futuremedialab.frauddetect.kebbi.ScenarioEngine
 import tw.futuremedialab.frauddetect.kebbi.ScenarioRepository
@@ -51,6 +52,7 @@ class MainActivity : FlutterActivity() {
     // 動作播放
     private var scenarioEngine: ScenarioEngine? = null
     private var soundManager: SoundEffectManager? = null
+    private var faceController: FaceController? = null
     @Volatile private var chassisEnabled = CHASSIS_ENABLED_BY_DEFAULT
 
     // Vosk
@@ -61,6 +63,8 @@ class MainActivity : FlutterActivity() {
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
         ensureRobotApi()
+        // 臉部服務連線是非同步的，啟動時就先建立，第一次換臉時才會已連上
+        if (faceController == null) faceController = FaceController(applicationContext)
 
         val ch = MethodChannel(flutterEngine.dartExecutor.binaryMessenger, CHANNEL)
         methodChannel = ch
@@ -88,6 +92,23 @@ class MainActivity : FlutterActivity() {
                     } else {
                         playScenario(id, result)
                     }
+                }
+
+                // 等目前的動作播完再播 (例如 聆聽→點頭 播完才開始思考)
+                "playScenarioAfterCurrent" -> {
+                    val id = call.argument<String>("id")
+                    val scenario = id?.let { ScenarioRepository.findById(it) }
+                    val engine = ensureScenarioEngine()
+                    when {
+                        scenario == null -> result.error("NO_SCENARIO", "Unknown scenario id: $id", null)
+                        engine == null -> result.success(false)
+                        else -> result.success(engine.playAfterCurrent(scenario))
+                    }
+                }
+
+                // 結束目前的「維持姿勢」(回覆到了 / 長輩說完了)
+                "nextScenarioStep" -> {
+                    result.success(scenarioEngine?.next() ?: false)
                 }
 
                 "stopScenario" -> {
@@ -492,12 +513,14 @@ class MainActivity : FlutterActivity() {
 
         return try {
             val sounds = soundManager ?: SoundEffectManager().also { soundManager = it }
+            val face = faceController ?: FaceController(applicationContext).also { faceController = it }
             val engine = ScenarioEngine(
                 robot = robot,
                 chassisManager = ChassisSafetyManager(robot) { chassisEnabled },
                 ledManager = LedManager(robot) { true },
                 soundManager = sounds,
                 isMotorEnabled = { true },
+                faceController = face,
             )
             scenarioEngine = engine
             Log.i(TAG, "scenario engine ready (chassis=$chassisEnabled)")

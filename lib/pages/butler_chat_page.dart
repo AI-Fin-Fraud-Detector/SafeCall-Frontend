@@ -9,6 +9,7 @@ import '../constants.dart';
 import '../di/service_locator.dart';
 import '../services/api_service.dart';
 import '../services/audio_service.dart';
+import '../services/debug_logger.dart';
 import '../services/kebbi_service.dart';
 import '../services/web_speech_service.dart';
 
@@ -118,6 +119,8 @@ class _ButlerChatPageState extends State<ButlerChatPage> {
 
   @override
   void dispose() {
+    // 離開管家頁面 → 揮手道別 (會中斷正在播的動作)
+    KebbiService.playScenario(KebbiScenario.byeHappy);
     KebbiService.setSTTCallback(null);
     KebbiService.setVoskProgressCallback(null);
     if (kIsWeb) {
@@ -139,6 +142,8 @@ class _ButlerChatPageState extends State<ButlerChatPage> {
     if (!mounted) return;
 
     if (isFinal) {
+      // 長輩說完 → 放開聆聽姿勢，播完後點頭
+      KebbiService.nextScenarioStep();
       setState(() {
         _isRecording = false;
         _liveTranscript = text.isNotEmpty ? text : 'No speech detected.';
@@ -265,6 +270,8 @@ class _ButlerChatPageState extends State<ButlerChatPage> {
       _textController.clear();
     });
     _autoSendOnResult = true;
+    // 長輩說話時凱比維持聆聽姿勢 (等目前的動作播完才開始)
+    KebbiService.playScenarioAfterCurrent(KebbiScenario.listenHold);
   }
 
   Future<void> _toggleRecording() async {
@@ -272,6 +279,7 @@ class _ButlerChatPageState extends State<ButlerChatPage> {
 
     if (_isRecording) {
       _autoSendOnResult = false;
+      KebbiService.nextScenarioStep();
 
       // Web: stop WebSpeechService
       if (kIsWeb) {
@@ -346,7 +354,9 @@ class _ButlerChatPageState extends State<ButlerChatPage> {
       _liveTranscript = 'Butler is thinking…';
     });
     _scrollToBottom();
-    KebbiService.playScenario(KebbiScenario.thinking);
+    // 長輩說完 → 放開聆聽 (播完會點頭)，接著維持思考姿勢直到回覆到達
+    KebbiService.nextScenarioStep();
+    KebbiService.playScenarioAfterCurrent(KebbiScenario.thinkHold);
 
     try {
       final result = await sl<ApiService>().sendChat(
@@ -367,7 +377,7 @@ class _ButlerChatPageState extends State<ButlerChatPage> {
         _liveTranscript = 'Tap mic to start recording...';
       });
       _scrollToBottom();
-      _triggerButlerReplyScenario(result.sentiment);
+      _triggerButlerReplyScenario(result.text, result.sentiment);
 
       if (result.audioBytes != null) {
         await AudioService.I.playMp3Bytes(
@@ -386,6 +396,7 @@ class _ButlerChatPageState extends State<ButlerChatPage> {
 
       if (mounted) setState(() => _isLoading = false);
     } catch (e) {
+      KebbiService.nextScenarioStep();
       setState(() {
         _messages.add(_ChatMessage(
           from: _Speaker.butler,
@@ -589,19 +600,35 @@ class _ButlerChatPageState extends State<ButlerChatPage> {
     );
   }
 
-  /// 依情緒挑動作，沒有情緒時播 [KebbiScenario.acknowledge]。
-  void _triggerButlerReplyScenario(String? sentiment) {
-    const bySentiment = <String, String>{
-      Sentiment.positive: KebbiScenario.celebrate,
-      Sentiment.neutral: KebbiScenario.acknowledge,
-      Sentiment.negative: KebbiScenario.comfort,
-    };
+  /// 管家回覆時的凱比動作 (先放開「思考」姿勢，等它播完再播)：
+  /// 1. 回覆含道別語 → 道別
+  /// 2. 否則依情緒 → 正面 / 中立 / 負面 (設計依據 Dael 2012、Gao 2024)
+  /// 3. 沒有情緒 (後端未提供或無法辨識) → 中立
+  void _triggerButlerReplyScenario(String replyText, String? sentiment) {
+    final lower = replyText.toLowerCase();
+    const farewellWords = [
+      'goodbye',
+      'good night',
+      'take care',
+      'have a nice day',
+    ];
 
-    KebbiService.playScenario(
-      bySentiment[sentiment] ?? KebbiScenario.acknowledge,
-    );
+    final String scenario;
+    if (farewellWords.any(lower.contains)) {
+      scenario = KebbiScenario.byeHappy;
+    } else {
+      const bySentiment = <String, String>{
+        Sentiment.positive: KebbiScenario.sentimentPositive,
+        Sentiment.neutral: KebbiScenario.sentimentNeutral,
+        Sentiment.negative: KebbiScenario.sentimentNegative,
+      };
+      scenario = bySentiment[sentiment] ?? KebbiScenario.sentimentNeutral;
+    }
+    DebugLogger.I.log('[Butler] reply sentiment=$sentiment -> $scenario');
+
+    KebbiService.nextScenarioStep();
+    KebbiService.playScenarioAfterCurrent(scenario);
   }
-
 }
 
 enum _Speaker { user, butler }

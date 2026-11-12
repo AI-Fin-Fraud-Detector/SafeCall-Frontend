@@ -16,9 +16,20 @@ class KebbiScenario {
   static const celebrate = 'butler_celebrate';
   static const farewell = 'butler_farewell';
 
-  // 情緒分類用
-  static const acknowledge = 'butler_acknowledge';
-  static const comfort = 'butler_comfort';
+  // 管家回覆情緒 (依後端 x-sentiment-label；設計依據 Dael 2012、Gao 2024)
+  static const sentimentPositive = 'butler_sentiment_positive';
+  static const sentimentNeutral = 'butler_sentiment_neutral';
+  static const sentimentNegative = 'butler_sentiment_negative';
+
+  // 管家互動時機 (Nuwa 內建動作 + 維持姿勢)
+  /// 等回覆：思考姿勢維持到 [KebbiService.nextScenarioStep]
+  static const thinkHold = 'butler_think_loop';
+
+  /// 長輩說話：聆聽姿勢維持到 [KebbiService.nextScenarioStep]，再點頭
+  static const listenHold = 'butler_listen_nod';
+
+  /// 道別：揮手 + 開心表情
+  static const byeHappy = 'butler_bye_happy';
 
   // 詐騙警告
   static const physicalBlock = 'fraud_physical_block';
@@ -229,6 +240,37 @@ class KebbiService {
       return false;
     } catch (e) {
       DebugLogger.I.log('[Kebbi] playScenario($id) error: $e');
+      return false;
+    }
+  }
+
+  /// 目前沒在播就立刻播；正在播就等它播完再播 (只保留最後一個排隊的)。
+  /// 回傳 false 表示沒播：不在凱比上或發生錯誤。不會丟例外。
+  static Future<bool> playScenarioAfterCurrent(String id) async {
+    if (!_isAndroidNative) return false;
+    try {
+      final ok = await _ch
+          .invokeMethod<bool>('playScenarioAfterCurrent', {'id': id});
+      return ok ?? false;
+    } on MissingPluginException {
+      DebugLogger.I.log('[Kebbi] playScenarioAfterCurrent skipped: channel not registered.');
+      return false;
+    } catch (e) {
+      DebugLogger.I.log('[Kebbi] playScenarioAfterCurrent($id) error: $e');
+      return false;
+    }
+  }
+
+  /// 結束目前的「維持姿勢」(思考：回覆到了；聆聽：長輩說完了)，
+  /// 讓動作播完回到立正再進下一步。沒有在維持時回傳 false。
+  static Future<bool> nextScenarioStep() async {
+    if (!_isAndroidNative) return false;
+    try {
+      return await _ch.invokeMethod<bool>('nextScenarioStep') ?? false;
+    } on MissingPluginException {
+      return false;
+    } catch (e) {
+      DebugLogger.I.log('[Kebbi] nextScenarioStep error: $e');
       return false;
     }
   }
