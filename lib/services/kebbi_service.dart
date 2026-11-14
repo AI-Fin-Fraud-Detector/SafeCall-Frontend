@@ -225,7 +225,8 @@ class KebbiService {
     }
   }
 
-  /// 回傳 false 表示沒播：不在凱比上，或已經有動作在播。不會丟例外。
+  /// 若已有動作在播，會先停掉再播新的 (原生層處理)。
+  /// 回傳 false 表示沒播：不在凱比上或發生錯誤。不會丟例外。
   static Future<bool> playScenario(String id) async {
     if (!_isAndroidNative) return false;
     try {

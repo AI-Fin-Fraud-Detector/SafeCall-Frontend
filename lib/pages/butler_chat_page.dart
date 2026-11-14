@@ -158,8 +158,7 @@ class _ButlerChatPageState extends State<ButlerChatPage> {
       }
     } else {
       setState(() {
-        _liveTranscript = text;
-        _textController.text = text;
+        _liveTranscript = text.isNotEmpty ? text : 'Listening…';
       });
     }
   }

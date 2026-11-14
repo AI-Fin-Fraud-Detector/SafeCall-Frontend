@@ -141,7 +141,7 @@ object ScenarioRepository {
     private const val HEAD_SWAY_SPEED = 60f  // 30° 擺幅 / 60 ≈ 0.5 秒，配合每拍 BEAT_MS
     private const val BEAT_MS = 500L
     // 負面：低頭 + 垂手 + 收肩 + 難過表情
-    private const val SAD_HEAD = 25f         // ⚠️ 超過 SDK 文件 ±20，未經實測；有異音或卡住立即停止
+    private const val SAD_HEAD = 25f         // 超過 SDK 文件 ±20；2026-11-12 實機調整確認可用 (正值＝低頭)
     private const val SAD_SHOULDER = -120f
     private const val SAD_SPEED = 60f
     /**
@@ -254,7 +254,7 @@ object ScenarioRepository {
             ScenarioStep(
                 name = "低頭・垂手・雙肩前收・難過臉",
                 jointTargets = listOf(
-                    JointTarget(Motor.NECK_Y, SAD_HEAD, 40f),            // ⚠️ 低頭方向未實測
+                    JointTarget(Motor.NECK_Y, SAD_HEAD, 40f),
                     JointTarget(Motor.R_SHOULDER_Y, 0f, SAD_SPEED),
                     JointTarget(Motor.L_SHOULDER_Y, 0f, SAD_SPEED),
                     JointTarget(Motor.R_ELBOW, 0f, SAD_SPEED),
