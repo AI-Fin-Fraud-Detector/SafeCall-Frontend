@@ -10,18 +10,60 @@ import '../models/fraud_models.dart';
 import '../models/login_models.dart';
 import 'debug_logger.dart';
 
+/// 後端 /api/chat/ 回傳的情緒分類值。
+class Sentiment {
+  Sentiment._();
+
+  static const positive = 'positive';
+  static const neutral = 'neutral';
+  static const negative = 'negative';
+}
+
 class ChatResult {
   final Uint8List? audioBytes;
   final String text;
   final String conversationId;
   final String messageId;
 
+  /// 這句回覆的情緒，值為 [Sentiment] 其中之一。
+  ///
+  /// null 表示後端沒給：分類服務未啟用、呼叫失敗，或 label 無法辨識。
+  final String? sentiment;
+
   ChatResult({
     this.audioBytes,
     required this.text,
     required this.conversationId,
     required this.messageId,
+    this.sentiment,
   });
+}
+
+/// 將後端的 label 對應到 [Sentiment]。
+///
+/// 後端不驗證 label 內容，實際字串由外部分類服務決定，因此採寬鬆比對並記錄原值。
+/// 無法辨識時回 null。
+String? _readSentiment(String? raw) {
+  if (raw == null || raw.trim().isEmpty) {
+    DebugLogger.I.log('[Chat] 無情緒分類');
+    return null;
+  }
+
+  final s = raw.trim().toLowerCase();
+  DebugLogger.I.log('[Chat] sentiment=$raw');
+
+  if (s.contains('pos') || s.contains('正面') || s.contains('正向')) {
+    return Sentiment.positive;
+  }
+  if (s.contains('neg') || s.contains('負面') || s.contains('負向')) {
+    return Sentiment.negative;
+  }
+  if (s.contains('neu') || s.contains('中立') || s.contains('中性')) {
+    return Sentiment.neutral;
+  }
+
+  DebugLogger.I.log('[Chat] 無法辨識的 sentiment：$raw');
+  return null;
 }
 
 class ApiService {
@@ -152,6 +194,7 @@ class ApiService {
         text: text,
         conversationId: resp.headers.value('x-conversation-id') ?? '',
         messageId: resp.headers.value('x-message-id') ?? '',
+        sentiment: _readSentiment(resp.headers.value('x-sentiment-label')),
       );
     }
 
@@ -164,6 +207,9 @@ class ApiService {
       text: json['message'] as String? ?? '',
       conversationId: json['conversation_id'] as String? ?? '',
       messageId: json['message_id'] as String? ?? '',
+      sentiment: _readSentiment(
+        (json['sentiment'] as Map?)?['label'] as String?,
+      ),
     );
   }
 

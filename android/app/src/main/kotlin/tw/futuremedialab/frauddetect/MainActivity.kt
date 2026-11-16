@@ -7,7 +7,11 @@ import android.util.Log
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
+import com.nuwarobotics.service.IClientId
 import com.nuwarobotics.service.agent.NuwaRobotAPI
+import com.nuwarobotics.service.agent.RobotEventCallback
+import com.nuwarobotics.service.agent.VoiceEventCallback
+import com.nuwarobotics.service.agent.VoiceEventListener
 import org.vosk.Model
 import org.vosk.Recognizer
 import org.vosk.android.RecognitionListener
@@ -18,6 +22,7 @@ import java.net.HttpURLConnection
 import java.net.URL
 import java.util.zip.ZipInputStream
 import tw.futuremedialab.frauddetect.kebbi.ChassisSafetyManager
+import tw.futuremedialab.frauddetect.kebbi.FaceController
 import tw.futuremedialab.frauddetect.kebbi.LedManager
 import tw.futuremedialab.frauddetect.kebbi.ScenarioEngine
 import tw.futuremedialab.frauddetect.kebbi.ScenarioRepository
@@ -47,6 +52,7 @@ class MainActivity : FlutterActivity() {
     // 動作播放
     private var scenarioEngine: ScenarioEngine? = null
     private var soundManager: SoundEffectManager? = null
+    private var faceController: FaceController? = null
     @Volatile private var chassisEnabled = CHASSIS_ENABLED_BY_DEFAULT
 
     // Vosk
@@ -56,6 +62,9 @@ class MainActivity : FlutterActivity() {
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
+        ensureRobotApi()
+        // 臉部服務連線是非同步的，啟動時就先建立，第一次換臉時才會已連上
+        if (faceController == null) faceController = FaceController(applicationContext)
 
         val ch = MethodChannel(flutterEngine.dartExecutor.binaryMessenger, CHANNEL)
         methodChannel = ch
@@ -83,6 +92,23 @@ class MainActivity : FlutterActivity() {
                     } else {
                         playScenario(id, result)
                     }
+                }
+
+                // 等目前的動作播完再播 (例如 聆聽→點頭 播完才開始思考)
+                "playScenarioAfterCurrent" -> {
+                    val id = call.argument<String>("id")
+                    val scenario = id?.let { ScenarioRepository.findById(it) }
+                    val engine = ensureScenarioEngine()
+                    when {
+                        scenario == null -> result.error("NO_SCENARIO", "Unknown scenario id: $id", null)
+                        engine == null -> result.success(false)
+                        else -> result.success(engine.playAfterCurrent(scenario))
+                    }
+                }
+
+                // 結束目前的「維持姿勢」(回覆到了 / 長輩說完了)
+                "nextScenarioStep" -> {
+                    result.success(scenarioEngine?.next() ?: false)
                 }
 
                 "stopScenario" -> {
@@ -198,64 +224,73 @@ class MainActivity : FlutterActivity() {
     // ── Kebbi STT ──────────────────────────────────────────────────────────────
 
     private fun startSTT(api: Any) {
-        val listenerClass = try {
-            Class.forName("com.nuwarobotics.service.agent.VoiceEventListener")
-        } catch (t: Throwable) {
-            Log.e(TAG, "VoiceEventListener class not found", t)
-            throw t
-        }
-
-        val proxy = java.lang.reflect.Proxy.newProxyInstance(
-            listenerClass.classLoader,
-            arrayOf(listenerClass)
-        ) { _, method, args ->
-            when (method.name) {
-                "onSpeech2TextComplete" -> {
-                    val text = args?.getOrNull(0) as? String ?: ""
-                    val isFinal = args?.getOrNull(1) as? Boolean ?: true
-                    Log.d(TAG, "onSpeech2TextComplete: text=$text isFinal=$isFinal")
-                    mainHandler.post {
-                        methodChannel?.invokeMethod(
-                            "onSTTResult",
-                            mapOf("text" to text, "isFinal" to isFinal)
-                        )
-                    }
-                }
-                "onSpeechState" -> {
-                    Log.d(TAG, "onSpeechState: ${args?.getOrNull(0)}")
-                }
-            }
-            null
-        }
-
-        try {
-            val reg = api.javaClass.getMethod("registerVoiceEventListener", listenerClass)
-            reg.invoke(api, proxy)
-            Log.d(TAG, "registerVoiceEventListener OK")
-        } catch (t: Throwable) {
-            Log.w(TAG, "registerVoiceEventListener failed", t)
-        }
-
-        try {
-            api.javaClass.getMethod("startSpeech2Text").invoke(api)
-            Log.d(TAG, "startSpeech2Text OK")
-        } catch (_: NoSuchMethodException) {
+        val robot = api as? NuwaRobotAPI
+        if (robot != null) {
             try {
-                api.javaClass.getMethod("speech2Txt").invoke(api)
-                Log.d(TAG, "speech2Txt OK")
+                robot.registerVoiceEventListener(object : VoiceEventCallback() {
+                    override fun onSpeech2TextComplete(isError: Boolean, text: String?) {
+                        Log.d(TAG, "onSpeech2TextComplete: rawText=$text isError=$isError")
+                        if (!isError && !text.isNullOrBlank()) {
+                            val cleanText = try {
+                                com.nuwarobotics.service.agent.VoiceResultJsonParser.parseVoiceResult(text)
+                            } catch (_: Throwable) {
+                                null
+                            }?.ifBlank { null } ?: try {
+                                org.json.JSONObject(text).optString("result", text)
+                            } catch (_: Throwable) {
+                                text
+                            }
+                            Log.d(TAG, "onSpeech2TextComplete: cleanText=$cleanText")
+                            mainHandler.post {
+                                methodChannel?.invokeMethod(
+                                    "onSTTResult",
+                                    mapOf("text" to cleanText, "isFinal" to true)
+                                )
+                            }
+                        } else {
+                            Log.w(TAG, "onSpeech2TextComplete error or empty: isError=$isError")
+                            mainHandler.post {
+                                methodChannel?.invokeMethod(
+                                    "onSTTResult",
+                                    mapOf("text" to "", "isFinal" to true)
+                                )
+                            }
+                        }
+                    }
+
+                    override fun onSpeechState(
+                        listenType: VoiceEventListener.ListenType?,
+                        speechState: VoiceEventListener.SpeechState?
+                    ) {
+                        Log.d(TAG, "onSpeechState: type=$listenType state=$speechState")
+                    }
+                })
+                Log.d(TAG, "registerVoiceEventListener OK")
             } catch (t: Throwable) {
-                Log.e(TAG, "No STT start method found", t)
+                Log.w(TAG, "registerVoiceEventListener failed", t)
+            }
+
+            try {
+                robot.startSpeech2Text(false)
+                Log.d(TAG, "startSpeech2Text OK")
+            } catch (t: Throwable) {
+                Log.e(TAG, "startSpeech2Text failed", t)
                 throw t
             }
+            return
         }
     }
 
     private fun stopSTT(api: Any) {
-        try {
-            api.javaClass.getMethod("stopListen").invoke(api)
-            Log.d(TAG, "stopListen OK")
-        } catch (t: Throwable) {
-            Log.w(TAG, "stopListen failed: ${t.message}")
+        val robot = api as? NuwaRobotAPI
+        if (robot != null) {
+            try {
+                robot.stopListen()
+                Log.d(TAG, "stopListen OK")
+            } catch (t: Throwable) {
+                Log.w(TAG, "stopListen failed: ${t.message}")
+            }
+            return
         }
     }
 
@@ -444,6 +479,9 @@ class MainActivity : FlutterActivity() {
 
             val engine = ensureScenarioEngine()
             if (engine != null) {
+                if (engine.isPlaying) {
+                    engine.stop()
+                }
                 result.success(engine.play(scenario))
                 return
             }
@@ -475,12 +513,14 @@ class MainActivity : FlutterActivity() {
 
         return try {
             val sounds = soundManager ?: SoundEffectManager().also { soundManager = it }
+            val face = faceController ?: FaceController(applicationContext).also { faceController = it }
             val engine = ScenarioEngine(
                 robot = robot,
                 chassisManager = ChassisSafetyManager(robot) { chassisEnabled },
                 ledManager = LedManager(robot) { true },
                 soundManager = sounds,
                 isMotorEnabled = { true },
+                faceController = face,
             )
             scenarioEngine = engine
             Log.i(TAG, "scenario engine ready (chassis=$chassisEnabled)")
@@ -496,25 +536,18 @@ class MainActivity : FlutterActivity() {
     private fun ensureRobotApi() {
         if (robotApi != null) return
         try {
-            val clazz = Class.forName("com.nuwarobotics.service.agent.NuwaRobotAPI")
-
-            robotApi = try {
-                val ctor1 = clazz.getConstructor(Context::class.java)
-                ctor1.newInstance(applicationContext)
-            } catch (e1: NoSuchMethodException) {
-                try {
-                    val idClazz = Class.forName("com.nuwarobotics.service.agent.IClientId")
-                    val idCtor = idClazz.getConstructor(String::class.java)
-                    val clientId = idCtor.newInstance(applicationContext.packageName)
-                    val ctor2 = clazz.getConstructor(Context::class.java, idClazz)
-                    ctor2.newInstance(applicationContext, clientId)
-                } catch (e2: Throwable) {
-                    Log.e(TAG, "No suitable NuwaRobotAPI constructor", e2)
-                    null
+            val clientId = IClientId(applicationContext.packageName)
+            val api = NuwaRobotAPI(applicationContext, clientId)
+            api.registerRobotEventListener(object : RobotEventCallback() {
+                override fun onWikiServiceStart() {
+                    Log.i(TAG, "Nuwa robot service connected (onWikiServiceStart)")
                 }
-            }
-
-            Log.d(TAG, "ensureRobotApi: instance=${robotApi != null}")
+                override fun onWikiServiceStop() {
+                    Log.w(TAG, "Nuwa robot service stopped (onWikiServiceStop)")
+                }
+            })
+            robotApi = api
+            Log.i(TAG, "ensureRobotApi: NuwaRobotAPI created successfully")
         } catch (t: Throwable) {
             Log.e(TAG, "ensureRobotApi failed", t)
             robotApi = null
@@ -522,20 +555,11 @@ class MainActivity : FlutterActivity() {
     }
 
     private fun playMotion(motionName: String): Boolean {
-        val api = robotApi ?: return false
+        val robot = robotApi as? NuwaRobotAPI ?: return false
         return try {
-            val clazz = api.javaClass
-            try {
-                val m = clazz.getMethod("motionPlay", String::class.java, Boolean::class.javaPrimitiveType)
-                m.invoke(api, motionName, java.lang.Boolean.FALSE)
-                Log.d(TAG, "motionPlay(String, boolean) => $motionName")
-                true
-            } catch (_: NoSuchMethodException) {
-                val m2 = clazz.getMethod("motionPlay", String::class.java)
-                m2.invoke(api, motionName)
-                Log.d(TAG, "motionPlay(String) => $motionName")
-                true
-            }
+            robot.motionPlay(motionName, false)
+            Log.d(TAG, "motionPlay => $motionName")
+            true
         } catch (t: Throwable) {
             Log.e(TAG, "motionPlay failed: $motionName", t)
             false
@@ -543,11 +567,9 @@ class MainActivity : FlutterActivity() {
     }
 
     private fun releaseRobotApi() {
-        val api = robotApi ?: return
+        val robot = robotApi as? NuwaRobotAPI
         try {
-            val m = api.javaClass.getMethod("release")
-            m.invoke(api)
-        } catch (_: NoSuchMethodException) {
+            robot?.release()
         } catch (t: Throwable) {
             Log.w(TAG, "releaseRobotApi invoke error", t)
         } finally {
